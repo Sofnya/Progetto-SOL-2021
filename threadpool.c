@@ -1,0 +1,148 @@
+#include <pthread.h>
+#include <stdbool.h>
+#include <assert.h>
+#include <unistd.h>
+
+
+#include "threadpool.h"
+#include "macros.h"
+
+
+void threadpoolInit(int size, threadPool *pool)
+{
+    int i;
+    struct _execLoopArgs *curArgs;
+    
+
+    pool->_size = size;
+    if(size <= 0) pool->_size = 4;
+
+    MALLOC_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
+
+    MALLOC_CHECK(pool->_queue = malloc(sizeof(syncQueue)));
+    syncqueueInit(pool->_queue);
+
+    pool->_closed = false;
+    pool->_terminate = false;
+    
+
+    for(i = 0; i < pool->_size; i++)
+    {
+
+        MALLOC_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
+        curArgs->queue = pool->_queue;
+        curArgs->terminate = &pool->_terminate;
+
+        PTHREAD_CHECK(pthread_create(pool->_pids + i, NULL, _execLoop, (void *)curArgs));
+    }
+}
+
+
+void threadpoolClear(threadPool *pool)
+{
+    struct _exec *cur;
+
+    while(syncqueueLen(*pool->_queue) > 0)
+    {
+        cur = syncqueuePop(pool->_queue);
+        free(cur);
+    }
+    syncqueueClear(pool->_queue);
+    
+    free(pool->_pids);
+    free(pool->_queue);
+}
+
+
+void threadpoolClose(threadPool *pool)
+{
+    pool->_closed = true;
+    syncqueueClose(pool->_queue);
+
+}
+
+
+void threadpoolTerminate(threadPool *pool)
+{
+    pool->_terminate = true;
+}
+
+
+void threadpoolCleanExit(threadPool *pool)
+{
+    threadpoolClose(pool);
+    while(syncqueueLen(*pool->_queue) > 0){}
+    threadpoolTerminate(pool);
+    threadpoolClose(pool);
+    threadpoolJoin(pool);
+}
+
+
+void threadpoolSubmit(void (*fnc)(void*), void* arg, threadPool *pool)
+{
+    struct _exec *newExec;
+    
+    if(pool->_closed){ errno = EINVAL; return;}
+    
+    MALLOC_CHECK(newExec = malloc(sizeof(struct _exec)));
+    newExec->arg = arg;
+    newExec->fnc = fnc;
+
+    syncqueuePush(newExec, pool->_queue);
+}
+
+
+void threadpoolJoin(threadPool *pool)
+{
+    int i;
+    
+    for(i = 0; i < pool->_size; i++)
+    {
+        PTHREAD_CHECK(pthread_join(pool->_pids[i], NULL));
+    }
+}
+
+
+void threadpoolCancel(threadPool *pool)
+{
+    int i;
+
+
+    threadpoolTerminate(pool);
+    for(i = 0; i < pool->_size; i++)
+    {
+        PTHREAD_CHECK(pthread_cancel(pool->_pids[i]));
+    }
+}
+
+
+void *_execLoop(void *args)
+{
+    struct _exec *curTask;
+    void (*curFunc)(void*);
+    void* curArgs;
+
+    bool *terminate = ((struct _execLoopArgs *)args)->terminate;
+    syncQueue *queue = ((struct _execLoopArgs *)args)->queue; 
+
+    free(args);
+    
+    while(!(*terminate))
+    {
+        errno = 0;
+        if((curTask = (struct _exec*) syncqueuePop(queue)) == NULL)
+        {
+            if(errno == EINVAL) return 0;
+            
+            continue;
+        }
+        curFunc = curTask->fnc;
+        curArgs = curTask->arg;
+        
+        free(curTask);
+        curFunc(curArgs);
+    }
+
+    return 0;
+}
+
