@@ -20,7 +20,7 @@ void load_config(char *path)
     int lineN = 0;
     long long tmp;
 
-    NULL_CHECK(configFile = fopen(path, "r"));
+    UNSAFE_NULL_CHECK(configFile = fopen(path, "r"));
 
     while(getline(&line, &len, configFile) != -1)
     {
@@ -104,7 +104,7 @@ void load_config(char *path)
         saveptr = NULL;
     }
     free(line);
-
+    fclose(configFile);
     puts("Succesfully loaded config:");
     printf("SOCK_NAME:%s\nPOOL_SIZE:%ld\nMAX_FILES:%lld\nMAX_MEMORY:%lld\n", SOCK_NAME, POOL_SIZE, MAX_FILES, MAX_MEMORY);
 }

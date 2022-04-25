@@ -34,17 +34,18 @@ void syncqueueDestroy(SyncQueue *queue)
 }
 
 
-void syncqueuePush(void *el, SyncQueue *queue)
+int syncqueuePush(void *el, SyncQueue *queue)
 {
     PTHREAD_CHECK(pthread_mutex_lock(&queue->_mtx));
     if(!queue->_isOpen)
     {
         PTHREAD_CHECK(pthread_mutex_unlock(&queue->_mtx));
-        return;
+        errno = EINVAL;
+        return -1;
     }
     if(queue->_head == NULL)
     {
-        NULL_CHECK(queue->_head = malloc(sizeof(struct _list)));
+        SAFE_NULL_CHECK(queue->_head = malloc(sizeof(struct _list)));
         queue->_tail = queue->_head;
         queue->_tail->next = NULL;
         queue->_tail->prev = NULL;
@@ -53,7 +54,7 @@ void syncqueuePush(void *el, SyncQueue *queue)
     }
     else 
     {
-        NULL_CHECK(queue->_tail->next = malloc(sizeof(struct _list)));
+        SAFE_NULL_CHECK(queue->_tail->next = malloc(sizeof(struct _list)));
         queue->_tail->next->prev = queue->_tail;
         queue->_tail = queue->_tail->next;
         queue->_tail->next = NULL;
@@ -63,6 +64,8 @@ void syncqueuePush(void *el, SyncQueue *queue)
 
     PTHREAD_CHECK(pthread_cond_signal(&queue->_newEl));
     PTHREAD_CHECK(pthread_mutex_unlock(&queue->_mtx));
+
+    return 0;
 }
 
 void *syncqueuePop(SyncQueue *queue)

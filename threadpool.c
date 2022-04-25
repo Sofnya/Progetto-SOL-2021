@@ -17,9 +17,9 @@ void threadpoolInit(int size, ThreadPool *pool)
     pool->_size = size;
     if(size <= 0) pool->_size = 4;
 
-    NULL_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
+    UNSAFE_NULL_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
 
-    NULL_CHECK(pool->_queue = malloc(sizeof(SyncQueue)));
+    UNSAFE_NULL_CHECK(pool->_queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(pool->_queue);
 
     pool->_closed = false;
@@ -29,7 +29,7 @@ void threadpoolInit(int size, ThreadPool *pool)
     for(i = 0; i < pool->_size; i++)
     {
 
-        NULL_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
+        UNSAFE_NULL_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
         curArgs->queue = pool->_queue;
         curArgs->terminate = &pool->_terminate;
 
@@ -78,17 +78,19 @@ void threadpoolCleanExit(ThreadPool *pool)
 }
 
 
-void threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool)
+int threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool)
 {
     struct _exec *newExec;
     
-    if(pool->_closed){ errno = EINVAL; return;}
+    if(pool->_closed){ errno = EINVAL; return -1;}
     
-    NULL_CHECK(newExec = malloc(sizeof(struct _exec)));
+    SAFE_NULL_CHECK(newExec = malloc(sizeof(struct _exec)));
     newExec->arg = arg;
     newExec->fnc = fnc;
 
     syncqueuePush(newExec, pool->_queue);
+
+    return 0;
 }
 
 
@@ -107,8 +109,8 @@ void threadpoolCancel(ThreadPool *pool)
 {
     int i;
 
-
     threadpoolTerminate(pool);
+    syncqueueClose(pool->_queue);
     for(i = 0; i < pool->_size; i++)
     {
         PTHREAD_CHECK(pthread_cancel(pool->_pids[i]));

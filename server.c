@@ -80,7 +80,9 @@ void handleConnection(void *fdc)
 
 void cleanup(void)
 {
+    puts("Cleaning up!");
     close(sfd);
     unlink(SOCK_NAME);
+    threadpoolCleanExit(&pool);
     threadpoolDestroy(&pool);
 }

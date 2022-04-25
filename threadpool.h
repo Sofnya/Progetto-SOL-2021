@@ -30,7 +30,7 @@ void threadpoolDestroy(ThreadPool *pool);
 void threadpoolClose(ThreadPool *pool);
 void threadpoolTerminate(ThreadPool *pool);
 void threadpoolCleanExit(ThreadPool *pool);
-void threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool);
+int threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool);
 
 void threadpoolJoin(ThreadPool *pool);
 void threadpoolCancel(ThreadPool *pool);

@@ -7,7 +7,7 @@
 
 
 #define UNIX_PATH_MAX 108
-#define SOCKNAME "./myVeryOwnAddress"
+#define SOCKNAME "fakeAddress"
 #define N 100
 
 

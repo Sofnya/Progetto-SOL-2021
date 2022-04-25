@@ -9,3 +9,4 @@ listTest:
 	$(CC) $(CFLAGS) listTest.c list.c -o list.out
 
 client: client.o
+	$(CC) $(CFLAGS) client.c -o client.out
