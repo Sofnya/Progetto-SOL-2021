@@ -8,7 +8,7 @@
 #include "macros.h"
 
 
-void threadpoolInit(int size, threadPool *pool)
+void threadpoolInit(int size, ThreadPool *pool)
 {
     int i;
     struct _execLoopArgs *curArgs;
@@ -19,7 +19,7 @@ void threadpoolInit(int size, threadPool *pool)
 
     NULL_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
 
-    NULL_CHECK(pool->_queue = malloc(sizeof(syncQueue)));
+    NULL_CHECK(pool->_queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(pool->_queue);
 
     pool->_closed = false;
@@ -38,7 +38,7 @@ void threadpoolInit(int size, threadPool *pool)
 }
 
 
-void threadpoolDestroy(threadPool *pool)
+void threadpoolDestroy(ThreadPool *pool)
 {
     struct _exec *cur;
 
@@ -54,7 +54,7 @@ void threadpoolDestroy(threadPool *pool)
 }
 
 
-void threadpoolClose(threadPool *pool)
+void threadpoolClose(ThreadPool *pool)
 {
     pool->_closed = true;
     syncqueueClose(pool->_queue);
@@ -62,13 +62,13 @@ void threadpoolClose(threadPool *pool)
 }
 
 
-void threadpoolTerminate(threadPool *pool)
+void threadpoolTerminate(ThreadPool *pool)
 {
     pool->_terminate = true;
 }
 
 
-void threadpoolCleanExit(threadPool *pool)
+void threadpoolCleanExit(ThreadPool *pool)
 {
     threadpoolClose(pool);
     while(syncqueueLen(*pool->_queue) > 0){}
@@ -78,7 +78,7 @@ void threadpoolCleanExit(threadPool *pool)
 }
 
 
-void threadpoolSubmit(void (*fnc)(void*), void* arg, threadPool *pool)
+void threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool)
 {
     struct _exec *newExec;
     
@@ -92,7 +92,7 @@ void threadpoolSubmit(void (*fnc)(void*), void* arg, threadPool *pool)
 }
 
 
-void threadpoolJoin(threadPool *pool)
+void threadpoolJoin(ThreadPool *pool)
 {
     int i;
     
@@ -103,7 +103,7 @@ void threadpoolJoin(threadPool *pool)
 }
 
 
-void threadpoolCancel(threadPool *pool)
+void threadpoolCancel(ThreadPool *pool)
 {
     int i;
 
@@ -123,7 +123,7 @@ void *_execLoop(void *args)
     void* curArgs;
 
     bool *terminate = ((struct _execLoopArgs *)args)->terminate;
-    syncQueue *queue = ((struct _execLoopArgs *)args)->queue; 
+    SyncQueue *queue = ((struct _execLoopArgs *)args)->queue; 
 
     free(args);
     

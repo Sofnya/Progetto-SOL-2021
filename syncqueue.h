@@ -12,7 +12,7 @@ struct _list {
     void *data;
 };
 
-typedef struct _syncQueue {
+typedef struct _SyncQueue {
     struct _list *_head;
     struct _list *_tail;
     pthread_mutex_t _mtx;
@@ -20,16 +20,16 @@ typedef struct _syncQueue {
     bool _isOpen;
     
     int _len;
-} syncQueue;
+} SyncQueue;
 
 
-void syncqueueInit(syncQueue *queue);
-void syncqueueDestroy(syncQueue *queue);
+void syncqueueInit(SyncQueue *queue);
+void syncqueueDestroy(SyncQueue *queue);
 
-void syncqueuePush(void *el, syncQueue *queue);
-void *syncqueuePop(syncQueue *queue);
-int syncqueueLen(syncQueue queue);
-void syncqueueClose(syncQueue *queue);
+void syncqueuePush(void *el, SyncQueue *queue);
+void *syncqueuePop(SyncQueue *queue);
+int syncqueueLen(SyncQueue queue);
+void syncqueueClose(SyncQueue *queue);
 
 
 #endif

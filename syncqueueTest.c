@@ -8,10 +8,10 @@
 
 int main(int argc, char const *argv[])
 {
-    syncQueue *queue;
+    SyncQueue *queue;
     int i, j = 99999;
 
-    NULL_CHECK(queue = malloc(sizeof(syncQueue)));
+    NULL_CHECK(queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(queue);
     for(i = 0; i < 100000; i++)
     {

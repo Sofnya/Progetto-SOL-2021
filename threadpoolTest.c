@@ -14,7 +14,7 @@ void test(void *par)
 
 int main(int argc, char const *argv[])
 {
-    threadPool pool;
+    ThreadPool pool;
     int i;
     threadpoolInit(4, &pool);
 

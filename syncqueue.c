@@ -2,7 +2,7 @@
 #include "macros.h"
 
 
-void syncqueueInit(syncQueue *queue)
+void syncqueueInit(SyncQueue *queue)
 {
     queue->_head = NULL;
     queue->_tail = NULL;
@@ -13,7 +13,7 @@ void syncqueueInit(syncQueue *queue)
     PTHREAD_CHECK(pthread_cond_init(&queue->_newEl, NULL));
 }
 
-void syncqueueDestroy(syncQueue *queue)
+void syncqueueDestroy(SyncQueue *queue)
 {
     struct _list *cur = queue->_head, *next = NULL;
     
@@ -34,7 +34,7 @@ void syncqueueDestroy(syncQueue *queue)
 }
 
 
-void syncqueuePush(void *el, syncQueue *queue)
+void syncqueuePush(void *el, SyncQueue *queue)
 {
     PTHREAD_CHECK(pthread_mutex_lock(&queue->_mtx));
     if(!queue->_isOpen)
@@ -65,7 +65,7 @@ void syncqueuePush(void *el, syncQueue *queue)
     PTHREAD_CHECK(pthread_mutex_unlock(&queue->_mtx));
 }
 
-void *syncqueuePop(syncQueue *queue)
+void *syncqueuePop(SyncQueue *queue)
 {
     PTHREAD_CHECK(pthread_mutex_lock(&queue->_mtx));
     while(queue->_len == 0) { 
@@ -98,13 +98,13 @@ void *syncqueuePop(syncQueue *queue)
 }
 
 
-int syncqueueLen(syncQueue queue)
+int syncqueueLen(SyncQueue queue)
 {
     return queue._len;
 }
 
 
-void syncqueueClose(syncQueue *queue)
+void syncqueueClose(SyncQueue *queue)
 {
     PTHREAD_CHECK(pthread_mutex_lock(&queue->_mtx));
     queue->_isOpen = false;

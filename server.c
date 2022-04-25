@@ -18,7 +18,7 @@
 
 
 int sfd;
-threadPool pool;
+ThreadPool pool;
 
 void handleConnection(void *fdc);
 void cleanup(void);

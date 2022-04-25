@@ -10,30 +10,31 @@ struct _exec {
 };
 
 
-typedef struct _threadPool {
-    syncQueue *_queue;
+typedef struct _ThreadPool {
+    SyncQueue *_queue;
     pthread_t *_pids;
     bool _closed;
     bool _terminate;
-    int _size;
-} threadPool;
+    long _coresize;
+    long _
+} ThreadPool;
 
 
 struct _execLoopArgs {
-    syncQueue *queue;
+    SyncQueue *queue;
     bool *terminate;
 };
 
 
-void threadpoolInit(int size, threadPool *pool);
-void threadpoolDestroy(threadPool *pool);
-void threadpoolClose(threadPool *pool);
-void threadpoolTerminate(threadPool *pool);
-void threadpoolCleanExit(threadPool *pool);
-void threadpoolSubmit(void (*fnc)(void*), void* arg, threadPool *pool);
+void threadpoolInit(long coresize, long maxsize, ThreadPool *pool);
+void threadpoolDestroy(ThreadPool *pool);
+void threadpoolClose(ThreadPool *pool);
+void threadpoolTerminate(ThreadPool *pool);
+void threadpoolCleanExit(ThreadPool *pool);
+void threadpoolSubmit(void (*fnc)(void*), void* arg, ThreadPool *pool);
 
-void threadpoolJoin(threadPool *pool);
-void threadpoolCancel(threadPool *pool);
+void threadpoolJoin(ThreadPool *pool);
+void threadpoolCancel(ThreadPool *pool);
 
 void *_execLoop(void *args);
 
