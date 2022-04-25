@@ -15,8 +15,7 @@ typedef struct _ThreadPool {
     pthread_t *_pids;
     bool _closed;
     bool _terminate;
-    long _coresize;
-    long _
+    int _size;
 } ThreadPool;
 
 
@@ -26,7 +25,7 @@ struct _execLoopArgs {
 };
 
 
-void threadpoolInit(long coresize, long maxsize, ThreadPool *pool);
+void threadpoolInit(int size, ThreadPool *pool);
 void threadpoolDestroy(ThreadPool *pool);
 void threadpoolClose(ThreadPool *pool);
 void threadpoolTerminate(ThreadPool *pool);
