@@ -26,7 +26,7 @@ struct _execLoopArgs {
 
 
 void threadpoolInit(int size, threadPool *pool);
-void threadpoolClear(threadPool *pool);
+void threadpoolDestroy(threadPool *pool);
 void threadpoolClose(threadPool *pool);
 void threadpoolTerminate(threadPool *pool);
 void threadpoolCleanExit(threadPool *pool);

@@ -3,6 +3,6 @@ CFLAGS = -g -Wall -pthread
 
 
 server:
-	$(CC) $(CFLAGS) server.c threadpool.c syncqueue.c -o server.out
+	$(CC) $(CFLAGS) server.c threadpool.c syncqueue.c globals.c -o server.out
 
 client: client.o

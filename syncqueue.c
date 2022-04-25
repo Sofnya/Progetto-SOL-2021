@@ -13,7 +13,7 @@ void syncqueueInit(syncQueue *queue)
     PTHREAD_CHECK(pthread_cond_init(&queue->_newEl, NULL));
 }
 
-void syncqueueClear(syncQueue *queue)
+void syncqueueDestroy(syncQueue *queue)
 {
     struct _list *cur = queue->_head, *next = NULL;
     
@@ -44,7 +44,7 @@ void syncqueuePush(void *el, syncQueue *queue)
     }
     if(queue->_head == NULL)
     {
-        MALLOC_CHECK(queue->_head = malloc(sizeof(struct _list)));
+        NULL_CHECK(queue->_head = malloc(sizeof(struct _list)));
         queue->_tail = queue->_head;
         queue->_tail->next = NULL;
         queue->_tail->prev = NULL;
@@ -53,7 +53,7 @@ void syncqueuePush(void *el, syncQueue *queue)
     }
     else 
     {
-        MALLOC_CHECK(queue->_tail->next = malloc(sizeof(struct _list)));
+        NULL_CHECK(queue->_tail->next = malloc(sizeof(struct _list)));
         queue->_tail->next->prev = queue->_tail;
         queue->_tail = queue->_tail->next;
         queue->_tail->next = NULL;

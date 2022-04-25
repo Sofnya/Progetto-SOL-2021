@@ -24,7 +24,7 @@ typedef struct _syncQueue {
 
 
 void syncqueueInit(syncQueue *queue);
-void syncqueueClear(syncQueue *queue);
+void syncqueueDestroy(syncQueue *queue);
 
 void syncqueuePush(void *el, syncQueue *queue);
 void *syncqueuePop(syncQueue *queue);

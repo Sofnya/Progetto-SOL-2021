@@ -17,9 +17,9 @@ void threadpoolInit(int size, threadPool *pool)
     pool->_size = size;
     if(size <= 0) pool->_size = 4;
 
-    MALLOC_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
+    NULL_CHECK(pool->_pids = malloc(sizeof(pthread_t) * pool->_size));
 
-    MALLOC_CHECK(pool->_queue = malloc(sizeof(syncQueue)));
+    NULL_CHECK(pool->_queue = malloc(sizeof(syncQueue)));
     syncqueueInit(pool->_queue);
 
     pool->_closed = false;
@@ -29,7 +29,7 @@ void threadpoolInit(int size, threadPool *pool)
     for(i = 0; i < pool->_size; i++)
     {
 
-        MALLOC_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
+        NULL_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
         curArgs->queue = pool->_queue;
         curArgs->terminate = &pool->_terminate;
 
@@ -38,7 +38,7 @@ void threadpoolInit(int size, threadPool *pool)
 }
 
 
-void threadpoolClear(threadPool *pool)
+void threadpoolDestroy(threadPool *pool)
 {
     struct _exec *cur;
 
@@ -47,7 +47,7 @@ void threadpoolClear(threadPool *pool)
         cur = syncqueuePop(pool->_queue);
         free(cur);
     }
-    syncqueueClear(pool->_queue);
+    syncqueueDestroy(pool->_queue);
     
     free(pool->_pids);
     free(pool->_queue);
@@ -84,7 +84,7 @@ void threadpoolSubmit(void (*fnc)(void*), void* arg, threadPool *pool)
     
     if(pool->_closed){ errno = EINVAL; return;}
     
-    MALLOC_CHECK(newExec = malloc(sizeof(struct _exec)));
+    NULL_CHECK(newExec = malloc(sizeof(struct _exec)));
     newExec->arg = arg;
     newExec->fnc = fnc;
 

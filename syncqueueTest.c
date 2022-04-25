@@ -11,7 +11,7 @@ int main(int argc, char const *argv[])
     syncQueue *queue;
     int i, j = 99999;
 
-    MALLOC_CHECK(queue = malloc(sizeof(syncQueue)));
+    NULL_CHECK(queue = malloc(sizeof(syncQueue)));
     syncqueueInit(queue);
     for(i = 0; i < 100000; i++)
     {
@@ -28,7 +28,7 @@ int main(int argc, char const *argv[])
     }
     puts("Tests succesfull!");
 
-    syncqueueClear(queue);
+    syncqueueDestroy(queue);
     return 0;
 }
 

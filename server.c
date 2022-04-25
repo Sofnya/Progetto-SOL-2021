@@ -10,14 +10,15 @@
 
 #include "macros.h"
 #include "threadpool.h"
+#include "globals.h"
 
 
 #define UNIX_PATH_MAX 108
-#define SOCKNAME "./myVeryOwnAddress"
 #define N 100
 
 
 int sfd;
+threadPool pool;
 
 void handleConnection(void *fdc);
 void cleanup(void);
@@ -31,7 +32,6 @@ int main()
     int fdc;
     int *curFd;
     struct sockaddr_un sa;
-    threadPool pool;
 
     signal(SIGTERM, &signalHandler);
     signal(SIGQUIT, &signalHandler);
@@ -39,10 +39,12 @@ int main()
 
     atexit(&cleanup);
 
+    load_config("config");
+
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
     sa.sun_family = AF_UNIX;
-    strncpy(sa.sun_path, SOCKNAME, UNIX_PATH_MAX - 1);
+    strncpy(sa.sun_path, SOCK_NAME, UNIX_PATH_MAX - 1);
     sa.sun_path[UNIX_PATH_MAX - 1] = '\00';
 
     ERROR_CHECK(bind(sfd, (struct sockaddr *)&sa, sizeof(sa)))
@@ -79,5 +81,6 @@ void handleConnection(void *fdc)
 void cleanup(void)
 {
     close(sfd);
-    unlink(SOCKNAME);
+    unlink(SOCK_NAME);
+    threadpoolDestroy(&pool);
 }
