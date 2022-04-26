@@ -7,6 +7,7 @@
 int main(int argc, char const *argv[])
 {
     List list, list2;
+    void *saveptr;
     int i;
     int *j;
     
@@ -34,18 +35,28 @@ int main(int argc, char const *argv[])
         ERROR_CHECK(listGet(i + 1, (void **)&j, &list));
         printf("%d: %d ok!\n", i, *j);
         assert(i == *j);
-        free(j);
     }
 
     puts("Gets done");
 
+    saveptr = NULL;
+    while(listScan((void **)&j, &saveptr, &list) != -1)
+    {
+        printf("%d\n", *j);
+        free(j);
+    }
+    printf("%d\n", *j);
+    free(j);
+    puts("Scan done");
+
+    /**
     listPop((void **)&j, &list);
     assert(*j == 1337);
 
     puts("Pop done");
 
     free(j);
-
+    */
     listDestroy(&list);
     puts("Destroy done");
 
@@ -59,7 +70,7 @@ int main(int argc, char const *argv[])
 
     for(i = 9999; i >= 0; i--)
     {
-        ERROR_CHECK(listPop(&j, &list2));
+        ERROR_CHECK(listPop((void **)&j, &list2));
         assert(*j == i);
         free(j);
     }

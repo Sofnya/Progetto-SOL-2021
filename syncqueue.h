@@ -19,7 +19,7 @@ typedef struct _SyncQueue {
     pthread_cond_t _newEl;
     bool _isOpen;
     
-    int _len;
+    long _len;
 } SyncQueue;
 
 
@@ -28,7 +28,7 @@ void syncqueueDestroy(SyncQueue *queue);
 
 int syncqueuePush(void *el, SyncQueue *queue);
 void *syncqueuePop(SyncQueue *queue);
-int syncqueueLen(SyncQueue queue);
+long syncqueueLen(SyncQueue queue);
 void syncqueueClose(SyncQueue *queue);
 
 

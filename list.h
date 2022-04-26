@@ -24,5 +24,7 @@ int listGet(long long pos, void **el, List *list);
 int listRemove(long long pos, void**el, List *list);
 int listSize(List list);
 
+int listScan(void **el, void **saveptr, List *list);
+
 
 #endif

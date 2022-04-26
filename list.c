@@ -346,3 +346,47 @@ int listSize(List list)
 {
     return list.size;
 }
+
+
+/**
+ * @brief Scans the list sequentially, giving a new element at every call. Should be first called with a NULL saveptr, and successively with the same unmodified saveptr.
+ * 
+ * @param el where the element will be stored.
+ * @param saveptr should point to NULL on the first call, unmodified afterwards.
+ * @param list the list to scan.
+ * @return int 0 on a successfull read, -1 and sets errno to EOF on list end, -1 and EINVAL on an invalid scan.
+ */
+int listScan(void **el, void **saveptr, List *list)
+{
+    struct _listEl *cur;
+
+    if(list->size == 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if(*saveptr == NULL)
+    {
+        cur = list->_head;
+        *saveptr = cur;
+    }
+    else
+    {
+        cur = *saveptr;
+    }
+
+    *el = cur->data;
+
+    if(cur->next != NULL)
+    {
+        *saveptr = cur->next;
+        return 0;
+    }
+    else
+    {
+        errno = EOF;
+        return -1;
+    }
+}
+

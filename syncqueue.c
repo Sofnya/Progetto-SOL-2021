@@ -101,7 +101,7 @@ void *syncqueuePop(SyncQueue *queue)
 }
 
 
-int syncqueueLen(SyncQueue queue)
+long syncqueueLen(SyncQueue queue)
 {
     return queue._len;
 }
