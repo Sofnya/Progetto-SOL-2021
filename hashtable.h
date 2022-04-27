@@ -28,19 +28,19 @@ typedef struct _HashTable{
 
 
 
-int _rowGet(char *key, struct _entry *el, struct _row row);
+int _rowGet(const char *key, struct _entry *el, struct _row row);
 int _rowPut(struct _entry el, struct _row row);
-int _rowRemove(char *key, struct _entry *el, struct _row row);
+int _rowRemove(const char *key, struct _entry *el, struct _row row);
 int _rowInit(struct _row *row);
 void _rowDestroy(struct _row row);
 
 
 int hashTableInit(uint64_t size, HashTable *table);
 void hashTableDestroy(HashTable *table);
-int hashTableGet(char *key, void **value, HashTable table);
-int hashTableRemove(char *key, void **value, HashTable table);
-int hashTablePut(char *key, void *value, HashTable table);
+int hashTableGet(const char *key, void **value, HashTable table);
+int hashTableRemove(const char *key, void **value, HashTable table);
+int hashTablePut(const char *key, void *value, HashTable table);
 
-uint64_t _getLoc(char *key, uint64_t size);
+uint64_t _getLoc(const char *key, uint64_t size);
 
 #endif

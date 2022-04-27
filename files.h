@@ -5,8 +5,6 @@
 #define O_READ      00000001
 #define O_WRITE     00000002
 #define O_LOCK      00000020
-#define O_APPEND    00000010
-#define O_CREATE    00000100
 #define O_OPEN      00000200
 
 
@@ -25,10 +23,12 @@ typedef struct _file{
 } File;
 
 
-int fileInit(char *name, File *file);
+int fileInit(const char *name, File *file);
 void fileDestroy(File *file);
 
-int fileWrite(void *content, uint64_t size, File *file);
+int fileWrite(const void *content, uint64_t size, File *file);
+int fileAppend(const void *content, uint64_t size, File *file);
+
 int fileRead(void *buf, uint64_t bufsize, File *file);
 
 int fileLock(File *file);

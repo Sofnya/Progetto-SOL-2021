@@ -20,7 +20,7 @@
  * @param row the row on which to search.
  * @return int 0 on success, -1 if not found.
  */
-int _rowGet(char *key, struct _entry *el, struct _row row)
+int _rowGet(const char *key, struct _entry *el, struct _row row)
 {
     struct _entry *cur;
     List *list;    
@@ -79,7 +79,9 @@ int _rowPut(struct _entry el, struct _row row)
     }
 
     SAFE_NULL_CHECK(new = malloc(sizeof(struct _entry)));
-    *new = el;
+    new->value = el.value;
+    SAFE_NULL_CHECK(new->key = malloc(strlen(el.key) + 1));
+    strcpy(new->key, el.key);
 
     list = row.row;
     listPush(new, list);
@@ -96,7 +98,7 @@ int _rowPut(struct _entry el, struct _row row)
  * @param row the _row to modify
  * @return int 0 on success, -1 if not found
  */
-int _rowRemove(char *key, struct _entry *el, struct _row row)
+int _rowRemove(const char *key, struct _entry *el, struct _row row)
 {
     struct _entry *cur;
     bool found = false;
@@ -137,6 +139,7 @@ int _rowRemove(char *key, struct _entry *el, struct _row row)
         ERROR_CHECK(listRemove(pos, &curel, list));
         cur = curel;
         if(el != NULL) *el = *cur;
+        free(cur->key);
         free(cur);
     }
 
@@ -176,15 +179,23 @@ int _rowInit(struct _row *row)
 void _rowDestroy(struct _row row)
 {
     void *cur, *saveptr = NULL;
+    struct _entry *curEntry;
 
     if(row.row->size != 0)
     {
         errno = 0;
         while(listScan(&cur, &saveptr, row.row) != -1)
         {
-            free(cur);
+            curEntry = cur;
+            free(curEntry->key);
+            free(curEntry);
         }
-        if(errno == EOF) free(cur);
+        if(errno == EOF) 
+        {
+            curEntry = cur;
+            free(curEntry->key);
+            free(curEntry);
+        }
     }
 
     listDestroy(row.row);
@@ -243,7 +254,7 @@ void hashTableDestroy(HashTable *table)
  * @param table the table in which to search.
  * @return int 0 on a success, -1 if not found.
  */
-int hashTableGet(char *key, void **value, HashTable table)
+int hashTableGet(const char *key, void **value, HashTable table)
 {
     uint64_t loc;
     struct _entry entry;
@@ -270,7 +281,7 @@ int hashTableGet(char *key, void **value, HashTable table)
  * @param table the table to modify.
  * @return int 0 on a success, -1 if not found.
  */
-int hashTableRemove(char *key, void **value, HashTable table)
+int hashTableRemove(const char *key, void **value, HashTable table)
 {
    
     uint64_t loc;
@@ -298,7 +309,7 @@ int hashTableRemove(char *key, void **value, HashTable table)
  * @param table the table to be modified.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int hashTablePut(char *key, void *value, HashTable table)
+int hashTablePut(const char *key, void *value, HashTable table)
 {
     uint64_t loc;
     struct _entry entry;
@@ -318,7 +329,7 @@ int hashTablePut(char *key, void *value, HashTable table)
  * @param size the size of the table.
  * @return uint64_t the index inside of which the key should be.
  */
-uint64_t _getLoc(char *key, uint64_t size)
+uint64_t _getLoc(const char *key, uint64_t size)
 {
      uint64_t hash[2];
      MurmurHash3_x64_128(key, strlen(key), SEED, hash);

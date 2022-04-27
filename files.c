@@ -12,12 +12,12 @@
  * @param file the file to initialize
  * @return int 0 on success, an errorcode otherwise
  */
-int fileInit(char *name, File *file)
+int fileInit(const char *name, File *file)
 {
     size_t nameSize;
 
     nameSize = strlen(name) + 1;
-    file->name = malloc(sizeof(char)* nameSize);
+    file->name = malloc(sizeof(char) * nameSize);
     strcpy(file->name, name);
 
     file->size = 0;
@@ -42,33 +42,49 @@ void fileDestroy(File *file)
 }
 
 /**
- * @brief Writes the given content of size size to the file, appends to the contents if O_APPEND is set in the files flags.
+ * @brief Writes the given content to the file.
  * 
  * @param content the content to be written.
- * @param size how much content should be written.
+ * @param size the size of content.
  * @param file the file to be modified.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int fileWrite(void *content, uint64_t size, File *file)
+int fileWrite(const void *content, uint64_t size, File *file)
 {
     if(!((file->flags & O_LOCK) && (file->flags & O_WRITE) && (file->flags & O_OPEN))) 
     {
         errno = EACCES;
         return -1;
     }
-    if(file->flags == O_APPEND)
-    {
-        UNSAFE_NULL_CHECK(file->content = realloc(file->content, size + file->size));
-        memcpy(content, size, file->content + file->size);
-
-        file->size += size;
-
-        return 0;
-    }
-
+    
     UNSAFE_NULL_CHECK(file->content = realloc(file->content, size));
     file->size = size;
 
+    memcpy(file->content, content, size);
+
+    return 0;
+}
+
+/**
+ * @brief Appends the given content at the end of the file.
+ * 
+ * @param content the content to be written.
+ * @param size the size of the new content.
+ * @param file the file to be modified.
+ * @return int 0 on success, -1 and sets errno on failure.
+ */
+int fileAppend(const void *content, uint64_t size, File *file)
+{
+    if(!((file->flags & O_LOCK) && (file->flags & O_WRITE) && (file->flags & O_OPEN))) 
+    {
+        errno = EACCES;
+        return -1;
+    }
+
+    UNSAFE_NULL_CHECK(file->content = realloc(file->content, size + file->size));
+    memcpy(file->content + file->size, content, size);
+
+    file->size += size;
 
     return 0;
 }
@@ -101,15 +117,23 @@ int fileRead(void *buf, uint64_t bufsize, File *file)
 
 
 /**
- * @brief Locks the file.
+ * @brief Locks the file, without blocking.
  * 
  * @param file 
- * @return int 
+ * @return int 0 if succesfull, -1 and sets errno on error (if file is already locked).
  */
 int fileLock(File *file)
 {
-    PTHREAD_CHECK(pthread_mutex_lock(file->mtx));
+    int res;
+
+    res = pthread_mutex_trylock(file->mtx);
+    if(res != 0) 
+    {
+        errno = res;
+        return -1;    
+    }
     file->flags |= O_LOCK;
+    return 0;
 }
 
 
