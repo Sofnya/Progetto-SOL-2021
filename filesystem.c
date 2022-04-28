@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 
 #include "filesystem.h"
@@ -19,14 +20,17 @@ int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
     fs->maxN = maxN;
     fs->maxSize = maxSize;
 
-    fs->curN = 0;
-    fs->curSize = 0;
+    atomicInit(&fs->curN);
+    atomicInit(&fs->curSize);
 
     
     SAFE_NULL_CHECK(fs->filesList = malloc(sizeof(List)));
+    SAFE_NULL_CHECK(fs->openFiles = malloc(sizeof(List)));
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
 
     SAFE_ERROR_CHECK(listInit(fs->filesList));
+    SAFE_ERROR_CHECK(listInit(fs->openFiles));
+    
     if(maxN > 0){
         SAFE_ERROR_CHECK(hashTableInit(maxN * 2, fs->filesTable));
     } 
@@ -49,6 +53,13 @@ void fsDestroy(FileSystem *fs)
     char *cur;
     File *curFile;
 
+    while(listSize(*fs->openFiles) > 0)
+    {
+        listPop(&cur, fs->openFiles);
+        free(cur);
+    }
+    listDestroy(fs->openFiles);
+
     while(listSize(*fs->filesList) > 0)
     {
         listPop(&cur, fs->filesList);
@@ -56,7 +67,6 @@ void fsDestroy(FileSystem *fs)
         
         fileDestroy(curFile);
         free(curFile);
-        free(cur);
     }
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
@@ -70,6 +80,7 @@ void fsDestroy(FileSystem *fs)
 int openFile(const char* pathname, int flags, FileSystem *fs)
 {
     File *file;
+    FileDescriptor *fd;
     int res;
 
 
@@ -83,9 +94,28 @@ int openFile(const char* pathname, int flags, FileSystem *fs)
             return -1;
         }
         
+        PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+        PTHREAD_CHECK(pthread_mutex_lock(fs->openFilesMtx));
+        
         SAFE_NULL_CHECK(file = malloc(sizeof(File)));
-        fileInit(pathname, file);
-        fileOpen(flags, file);
+        ERROR_CHECK(fileInit(pathname, file));
+
+        ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable));
+        ERROR_CHECK(listAppend(file->name, fs->filesList));
+
+        atomicInc(1, &fs->curN);
+
+        SAFE_NULL_CHECK(fd = malloc(sizeof(FileDescriptor)));
+        fd->name = file->name;
+        fd->pid = getpid();
+        fd->flags = flags;
+
+        listAppend((void *)fd, fs->openFiles);
+
+        return 0;
+        PTHREAD_CHECK(pthread_mutex_unlock(fs->openFilesMtx));
+        PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
+
     }
     else
     {

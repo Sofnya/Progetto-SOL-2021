@@ -10,20 +10,18 @@
  * 
  * @param name the pathname of the file
  * @param file the file to initialize
- * @return int 0 on success, an errorcode otherwise
+ * @return int 0 on success, -1 and sets errno otherwise
  */
 int fileInit(const char *name, File *file)
 {
     size_t nameSize;
 
     nameSize = strlen(name) + 1;
-    file->name = malloc(sizeof(char) * nameSize);
+    SAFE_NULL_CHECK(file->name = malloc(sizeof(char) * nameSize));
     strcpy(file->name, name);
 
     file->size = 0;
     file->content = NULL;
-
-    file->flags = 0;
 
     PTHREAD_CHECK(pthread_mutex_init(file->mtx, NULL));
 }
@@ -51,12 +49,6 @@ void fileDestroy(File *file)
  */
 int fileWrite(const void *content, uint64_t size, File *file)
 {
-    if(!((file->flags & O_LOCK) && (file->flags & O_WRITE) && (file->flags & O_OPEN))) 
-    {
-        errno = EACCES;
-        return -1;
-    }
-    
     UNSAFE_NULL_CHECK(file->content = realloc(file->content, size));
     file->size = size;
 
@@ -75,12 +67,6 @@ int fileWrite(const void *content, uint64_t size, File *file)
  */
 int fileAppend(const void *content, uint64_t size, File *file)
 {
-    if(!((file->flags & O_LOCK) && (file->flags & O_WRITE) && (file->flags & O_OPEN))) 
-    {
-        errno = EACCES;
-        return -1;
-    }
-
     UNSAFE_NULL_CHECK(file->content = realloc(file->content, size + file->size));
     memcpy(file->content + file->size, content, size);
 
@@ -100,12 +86,6 @@ int fileAppend(const void *content, uint64_t size, File *file)
 int fileRead(void *buf, uint64_t bufsize, File *file)
 {
     uint64_t n;
-
-    if(!((file->flags & O_LOCK) && (file->flags & O_READ) && (file->flags & O_OPEN))) 
-    {
-        errno = EACCES;
-        return -1;
-    }
 
     if(bufsize < file->size) n = bufsize;
     else n = file->size;
@@ -132,7 +112,6 @@ int fileLock(File *file)
         errno = res;
         return -1;    
     }
-    file->flags |= O_LOCK;
     return 0;
 }
 
@@ -145,43 +124,7 @@ int fileLock(File *file)
  */
 int fileUnlock(File *file)
 {
-    file->flags &= ~O_LOCK;
     PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
-}
-
-/**
- * @brief Open the file with given flags.
- * 
- * @param flags 
- * @param file 
- * @return int 0 on success, -1 and sets errno if file is already open.
- */
-int fileOpen(int flags, File *file)
-{
-    if(file->flags & O_OPEN)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    file->flags = O_OPEN | flags | (file->flags & O_LOCK);
-    return 0;
-}
-
-/**
- * @brief Closes the file, clearing its flags.
- * 
- * @param file
- * @returns int 0 on success, -1 and sets errno if file is not open.
- */
-int fileClose(File *file)
-{
-    if(!(file->flags & O_OPEN))
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    file->flags = file->flags & O_LOCK;
-    return 0;
 }
 
 
