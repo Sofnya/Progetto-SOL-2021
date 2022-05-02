@@ -7,23 +7,25 @@
 
 
 #include "files.h"
-#include "hashtable.h"
-#include "list.h"
-#include "atomicint.h"
+#include "COMMON/hashtable.h"
+#include "COMMON/list.h"
+#include "COMMON/atomicint.h"
 
 
 #define O_LOCK      00000001
 #define O_CREATE    00000002
 #define O_APPEND    00000010
 
+#define F_READ      00000001
+#define F_WRITE     00000002
+#define F_LOCK      00000010
 
 
 typedef struct _filesystem{
     List *filesList;
-    List *openFiles;
-    pthread_mutex_t *filesListMtx, *openFilesMtx;
+    pthread_mutex_t *filesListMtx;
     HashTable *filesTable;
-    AtomicInt curSize, curN;
+    AtomicInt *curSize, *curN;
     uint64_t maxSize, maxN;
 } FileSystem;
 
@@ -38,16 +40,16 @@ typedef struct _fileDescriptor {
 int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
-int openFile(const char* pathname, int flags, FileSystem *fs);
-int closeFile(const char* pathname, FileSystem *fs);
+int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
+int closeFile(FileDescriptor *fd, FileSystem *fs);
 
-int readFile(const char* pathname, void** buf, size_t* size, FileSystem *fs);
-int writeFile(const char* pathname, FileSystem *fs);
-int appendToFile(const char* pathname, void* buf, size_t size, FileSystem *fs);
+int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs);
+int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
+int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs);
 
 int lockFile(const char* pathname, FileSystem *fs);
 int unlockFile(const char* pathname, FileSystem *fs);
-int removeFile(const char* pathname, FileSystem *fs);
+int removeFile(FileDescriptor *fd, FileSystem *fs);
 
 
 #endif

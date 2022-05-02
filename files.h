@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <stdint.h>
 
-#include "hashtable.h"
+
 
 
 
@@ -25,6 +25,7 @@ int fileAppend(const void *content, uint64_t size, File *file);
 
 int fileRead(void *buf, uint64_t bufsize, File *file);
 
+int fileTryLock(File *file);
 int fileLock(File *file);
 int fileUnlock(File *file);
 

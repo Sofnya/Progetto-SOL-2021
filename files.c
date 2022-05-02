@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "macros.h"
+#include "COMMON/macros.h"
 
 
 /**
@@ -22,8 +22,9 @@ int fileInit(const char *name, File *file)
 
     file->size = 0;
     file->content = NULL;
-
+    SAFE_NULL_CHECK(file->mtx = malloc(sizeof(pthread_mutex_t)));
     PTHREAD_CHECK(pthread_mutex_init(file->mtx, NULL));
+    return 0;
 }
 
 /**
@@ -37,6 +38,7 @@ void fileDestroy(File *file)
     free(file->content);
 
     PTHREAD_CHECK(pthread_mutex_destroy(file->mtx));
+    free(file->mtx);
 }
 
 /**
@@ -97,12 +99,12 @@ int fileRead(void *buf, uint64_t bufsize, File *file)
 
 
 /**
- * @brief Locks the file, without blocking.
+ * @brief Trys to lock the file, without blocking.
  * 
  * @param file 
- * @return int 0 if succesfull, -1 and sets errno on error (if file is already locked).
+ * @return int 0 if succesfull, -1 and sets errno on if file is already locked.
  */
-int fileLock(File *file)
+int fileTryLock(File *file)
 {
     int res;
 
@@ -117,6 +119,19 @@ int fileLock(File *file)
 
 
 /**
+ * @brief Locks the file.
+ * 
+ * @param file 
+ * @return int 
+ */
+int fileLock(File *file)
+{
+    PTHREAD_CHECK(pthread_mutex_lock(file->mtx));
+    return 0;
+}
+
+
+/**
  * @brief Unlocks the file.
  * 
  * @param file 
@@ -125,6 +140,7 @@ int fileLock(File *file)
 int fileUnlock(File *file)
 {
     PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
+    return 0;
 }
 
 

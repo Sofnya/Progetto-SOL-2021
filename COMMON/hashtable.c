@@ -309,7 +309,7 @@ int hashTableRemove(const char *key, void **value, HashTable table)
  * @param table the table to be modified.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int hashTablePut(const char *key, void *value, HashTable table)
+int hashTablePut(char *key, void *value, HashTable table)
 {
     uint64_t loc;
     struct _entry entry;
