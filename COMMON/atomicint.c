@@ -13,6 +13,8 @@ void atomicInit(AtomicInt *el)
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     */
+
+    UNSAFE_NULL_CHECK(el->_mtx = malloc(sizeof(pthread_mutex_t)));
     pthread_mutex_init(el->_mtx, NULL);
     el->_value = 0;
 }
@@ -25,6 +27,7 @@ void atomicInit(AtomicInt *el)
 void atomicDestroy(AtomicInt *el)
 {
     pthread_mutex_destroy(el->_mtx);
+    free(el->_mtx);
 }
 
 /**

@@ -15,4 +15,7 @@ client: client.o
 	$(CC) $(CFLAGS) client.c -o client.out
 
 filesTest:
-	$(CC) $(CFLAGS) TESTS/filesTest.c files.c files.h COMMON/* -o filesTest.out
+	$(CC) $(CFLAGS) TESTS/filesTest.c files.c COMMON/* -o filesTest.out
+
+filesystemTest:
+	$(CC) $(CFLAGS) TESTS/filesystemTest.c filesystem.c files.c COMMON/* -o filesystemTest.out

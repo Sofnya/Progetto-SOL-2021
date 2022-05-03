@@ -4,7 +4,7 @@
 
 
 #include "filesystem.h"
-#include "macros.h"
+#include "COMMON/macros.h"
 
 
 /**
@@ -20,13 +20,20 @@ int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
     fs->maxN = maxN;
     fs->maxSize = maxSize;
 
+    SAFE_NULL_CHECK(fs->curN = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(fs->curSize = malloc(sizeof(AtomicInt)));
+    
     atomicInit(fs->curN);
     atomicInit(fs->curSize);
 
     
     SAFE_NULL_CHECK(fs->filesList = malloc(sizeof(List)));
+    SAFE_NULL_CHECK(fs->filesListMtx = malloc(sizeof(pthread_mutex_t)));
+
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
 
+    
+    PTHREAD_CHECK(pthread_mutex_init(fs->filesListMtx, NULL));
     SAFE_ERROR_CHECK(listInit(fs->filesList));
     
     if(maxN > 0){
@@ -47,24 +54,30 @@ int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
  */
 void fsDestroy(FileSystem *fs)
 {
-    int i, len;
     char *cur;
     File *curFile;
 
-
+    
     while(listSize(*fs->filesList) > 0)
     {
-        listPop(&cur, fs->filesList);
-        hashTableRemove(cur, curFile, *fs->filesTable);
+        //UNSAFE_NULL_CHECK(curFile = malloc(sizeof(File)));
+        listPop((void **)&cur, fs->filesList);
+        hashTableRemove(cur, (void **)&curFile, *fs->filesTable);
         
         fileDestroy(curFile);
         free(curFile);
     }
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
+    pthread_mutex_destroy(fs->filesListMtx);
+    atomicDestroy(fs->curN);
+    atomicDestroy(fs->curSize);
 
     free(fs->filesList);
     free(fs->filesTable);
+    free(fs->filesListMtx);
+    free(fs->curN);
+    free(fs->curSize);
 
 }
 
@@ -77,14 +90,14 @@ void fsDestroy(FileSystem *fs)
  * @param fs 
  * @return int 
  */
-int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
+int openFile(char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
     File *file;
     FileDescriptor *newFd;
     int res;
 
 
-    res = hashTableGet(pathname, file, *fs->filesTable);
+    res = hashTableGet(pathname, (void **)&file, *fs->filesTable);
 
     if(flags & O_CREATE)
     {
@@ -109,7 +122,7 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         newFd->name = file->name;
         newFd->pid = getpid();
-        newFd->flags = F_READ | F_WRITE;
+        newFd->flags = FI_READ | FI_WRITE;
 
         *fd = newFd;
 
@@ -128,7 +141,7 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         newFd->name = file->name;
         newFd->pid = getpid();
-        newFd->flags = F_READ | F_WRITE;
+        newFd->flags = FI_READ | FI_WRITE;
 
         *fd = newFd;
 
@@ -140,6 +153,7 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
 int closeFile(FileDescriptor *fd, FileSystem *fs)
 {
     free(fd);
+    return 0;
 }
 
 /**
@@ -155,13 +169,13 @@ int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs)
 {
     File *file;
 
-    if(!(fd->flags & F_READ))
+    if(!(fd->flags & FI_READ))
     {
         errno = EINVAL;
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, &file, *fs->filesTable));
+    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
     if(getFileSize(file) > size)
     {
@@ -186,13 +200,13 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     File *file;
     uint64_t oldSize;
 
-    if(!(fd->flags & F_WRITE))
+    if(!(fd->flags & FI_WRITE))
     {
         errno = EINVAL;
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, &file, *fs->filesTable));
+    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
     SAFE_ERROR_CHECK(fileLock(file));
     oldSize = getFileSize(file);
@@ -218,13 +232,13 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
     File *file;
 
 
-    if(!(fd->flags & F_WRITE))
+    if(!(fd->flags & FI_WRITE))
     {
         errno = EINVAL;
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, &file, *fs->filesTable));
+    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
     SAFE_ERROR_CHECK(fileLock(file));
     SAFE_ERROR_CHECK(fileAppend(buf, size, file));
@@ -247,14 +261,14 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
 
-    if(!(fd->flags & F_WRITE))
+    if(!(fd->flags & FI_WRITE))
     {
         errno = EINVAL;
         return -1;
     }
 
 
-    SAFE_ERROR_CHECK(hashTableRemove(fd->name, &file, *fs->filesTable));
+    SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
 
     SAFE_ERROR_CHECK(fileLock(file));
     atomicDec(getFileSize(file), fs->curSize);

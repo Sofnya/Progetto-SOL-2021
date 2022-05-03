@@ -16,9 +16,9 @@
 #define O_CREATE    00000002
 #define O_APPEND    00000010
 
-#define F_READ      00000001
-#define F_WRITE     00000002
-#define F_LOCK      00000010
+#define FI_READ      00000001
+#define FI_WRITE     00000002
+#define FI_LOCK      00000010
 
 
 typedef struct _filesystem{
@@ -40,7 +40,7 @@ typedef struct _fileDescriptor {
 int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
-int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
+int openFile(char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
 int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs);
