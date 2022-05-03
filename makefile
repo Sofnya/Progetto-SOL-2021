@@ -19,3 +19,6 @@ filesTest:
 
 filesystemTest:
 	$(CC) $(CFLAGS) TESTS/filesystemTest.c filesystem.c files.c COMMON/* -o filesystemTest.out
+
+messageTest:
+	$(CC) $(CFLAGS) TESTS/messageTest.c COMMON/message.c -o messageTest.out
