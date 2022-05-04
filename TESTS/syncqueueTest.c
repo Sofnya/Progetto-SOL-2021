@@ -2,7 +2,8 @@
 #include <assert.h>
 #include <stdlib.h>
 
-#include "syncqueue.h"
+#include "../COMMON/syncqueue.h"
+#include "../COMMON/macros.h"
 
 
 
@@ -12,7 +13,7 @@ int main(int argc, char const *argv[])
     SyncQueue *queue;
     int i, j = 99999;
 
-    NULL_CHECK(queue = malloc(sizeof(SyncQueue)));
+    UNSAFE_NULL_CHECK(queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(queue);
     for(i = 0; i < 100000; i++)
     {
@@ -30,6 +31,7 @@ int main(int argc, char const *argv[])
     puts("Tests succesfull!");
 
     syncqueueDestroy(queue);
+    free(queue);
     return 0;
 }
 

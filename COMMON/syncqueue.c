@@ -15,7 +15,7 @@ void syncqueueInit(SyncQueue *queue)
 
 void syncqueueDestroy(SyncQueue *queue)
 {
-    struct _list *cur = queue->_head, *next = NULL;
+    struct _slist *cur = queue->_head, *next = NULL;
     
     while(cur != NULL)
     {
@@ -45,20 +45,20 @@ int syncqueuePush(void *el, SyncQueue *queue)
     }
     if(queue->_head == NULL)
     {
-        SAFE_NULL_CHECK(queue->_head = malloc(sizeof(struct _list)));
+        SAFE_NULL_CHECK(queue->_head = malloc(sizeof(struct _slist)));
         queue->_tail = queue->_head;
-        queue->_tail->next = NULL;
-        queue->_tail->prev = NULL;
-        queue->_tail->data = el;
+        queue->_head->next = NULL;
+        queue->_head->prev = NULL;
+        queue->_head->data = el;
         queue->_len ++;
     }
     else 
     {
-        SAFE_NULL_CHECK(queue->_tail->next = malloc(sizeof(struct _list)));
-        queue->_tail->next->prev = queue->_tail;
-        queue->_tail = queue->_tail->next;
-        queue->_tail->next = NULL;
-        queue->_tail->data = el;
+        SAFE_NULL_CHECK(queue->_head->prev = malloc(sizeof(struct _slist)));
+        queue->_head->prev->next = queue->_head;
+        queue->_head = queue->_head->prev;
+        queue->_head->prev = NULL;
+        queue->_head->data = el;
         queue->_len ++;
     }
 

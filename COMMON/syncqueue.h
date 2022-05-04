@@ -6,15 +6,15 @@
 
 
 
-struct _list {
-    struct _list *next;
-    struct _list *prev;
+struct _slist {
+    struct _slist *next;
+    struct _slist *prev;
     void *data;
 };
 
 typedef struct _SyncQueue {
-    struct _list *_head;
-    struct _list *_tail;
+    struct _slist *_head;
+    struct _slist *_tail;
     pthread_mutex_t _mtx;
     pthread_cond_t _newEl;
     bool _isOpen;

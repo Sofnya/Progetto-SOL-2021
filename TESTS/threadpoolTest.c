@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "threadpool.h"
+#include "../COMMON/threadpool.h"
 
 
 void test(void *par)
@@ -17,9 +17,9 @@ int main(int argc, char const *argv[])
 {
     ThreadPool pool;
     int i;
-    threadpoolInit(4, &pool);
+    threadpoolInit(1, 4, &pool);
 
-    for(i = 0; i < 100; i++)
+    for(i = 0; i < 20; i++)
     {
         int *j = malloc(sizeof(int));
         *j = i;
@@ -27,6 +27,7 @@ int main(int argc, char const *argv[])
     }
 
     threadpoolCleanExit(&pool);
+    threadpoolDestroy(&pool);
     return 0;
 }
 
