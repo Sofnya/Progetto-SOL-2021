@@ -8,8 +8,10 @@
 #include <signal.h>
 
 
-#include "macros.h"
-#include "threadpool.h"
+#include "COMMON/macros.h"
+#include "COMMON/threadpool.h"
+#include "COMMON/message.h"
+#include "filesystem.h"
 #include "globals.h"
 
 
@@ -19,6 +21,7 @@
 
 int sfd;
 ThreadPool pool;
+FileSystem fs;
 
 void handleConnection(void *fdc);
 void cleanup(void);
@@ -41,6 +44,9 @@ int main()
 
     load_config("config");
 
+    fsInit(MAX_FILES, MAX_MEMORY, &fs);
+
+
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
     sa.sun_family = AF_UNIX;
@@ -51,7 +57,7 @@ int main()
     
     ERROR_CHECK(listen(sfd, SOMAXCONN))
 
-    threadpoolInit(8, &pool);
+    threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
     while(1){
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
         curFd = malloc(sizeof(int));
@@ -68,15 +74,47 @@ int main()
 
 void handleConnection(void *fdc)
 {
-    char buf[N];
+    Message *request;
+    Message *response;
     int fd = *(int *)fdc;
     free(fdc);
-    read(fd, buf, N);
-    puts(buf);
+
+    UNSAFE_NULL_CHECK(request = malloc(sizeof(Message)));
+
+    receiveMessage(fd, request);
+
+    puts(request->info);
+    
+
+    response = parseRequest(request);
+    sendMessage(fd, response);    
+    
+    messageDestroy(request);
+    messageDestroy(response);
+    
+    free(request);
+    free(response);
     close(fd);
     
     return;
 }
+
+
+Message *parseRequest(Message *request)
+{
+    Message *response;
+    UNSAFE_NULL_CHECK(response = malloc(sizeof(Message)));
+    switch(request->type)
+    {
+        case(0):
+            messageInit(0,NULL, "Hey to u too", 0, 200, response);
+            return response;
+        default:
+            messageInit(0, NULL, "Invalid request.", 0, 400, response);
+            return response;
+    }
+}
+
 
 void cleanup(void)
 {
@@ -85,4 +123,6 @@ void cleanup(void)
     unlink(SOCK_NAME);
     threadpoolCleanExit(&pool);
     threadpoolDestroy(&pool);
+
+    fsDestroy(&fs);
 }

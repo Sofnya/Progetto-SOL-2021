@@ -3,10 +3,10 @@ CFLAGS = -g -Wall -pthread
 
 
 server:
-	$(CC) $(CFLAGS) server.c COMMON/threadpool.c COMMON/syncqueue.c globals.c -o server.out
+	$(CC) $(CFLAGS) server.c COMMON/*.c  globals.c -o server.out
 
-client: client.o
-	$(CC) $(CFLAGS) client.c -o client.out
+client:
+	$(CC) $(CFLAGS) client.c COMMON/*.c -o client.out
 
 filesTest:
 	$(CC) $(CFLAGS) TESTS/filesTest.c files.c COMMON/* -o filesTest.out

@@ -1,5 +1,5 @@
 #include "globals.h"
-#include "macros.h"
+#include "COMMON/macros.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -7,9 +7,10 @@
 
 
 char SOCK_NAME[UNIX_PATH_MAX] = "default_address";
-long POOL_SIZE = 8;
-long long MAX_FILES = 100;
-long long MAX_MEMORY = 100*1024*1024;
+uint64_t CORE_POOL_SIZE = 8;
+uint64_t MAX_POOL_SIZE = UINT64_MAX;
+uint64_t MAX_FILES = 100;
+uint64_t MAX_MEMORY = 100*1024*1024;
 
 
 void load_config(char *path)
@@ -45,16 +46,32 @@ void load_config(char *path)
             strncpy(SOCK_NAME, value, UNIX_PATH_MAX -1);
             SOCK_NAME[UNIX_PATH_MAX-1] = '\00'; 
         }
-        else if (!strcmp(option, "POOL_SIZE"))
+        else if (!strcmp(option, "CORE_POOL_SIZE"))
         {
-            tmp = strtol(value, NULL, 0);
-            if(tmp == __LONG_MAX__ || tmp <= 0)
+            errno = 0;
+            tmp = strtoll(value, NULL, 0);
+            if(errno != 0)
             {
+                perror("Error");
                 printf("Invalid value on line %d, ignoring.\n", lineN);
                 continue;
             }
-            else{
-            POOL_SIZE = tmp;
+            else if(tmp > 0){
+            CORE_POOL_SIZE = tmp;
+            }
+        }
+        else if (!strcmp(option, "MAX_POOL_SIZE"))
+        {
+            errno = 0;
+            tmp = strtoll(value, NULL, 0);
+            if(errno != 0)
+            {
+                perror("Error");
+                printf("Invalid value on line %d, ignoring.\n", lineN);
+                continue;
+            }
+            else if(tmp > 0){
+            CORE_POOL_SIZE = tmp;
             }
         }
         else if (!strcmp(option, "MAX_FILES"))
@@ -106,5 +123,5 @@ void load_config(char *path)
     free(line);
     fclose(configFile);
     puts("Succesfully loaded config:");
-    printf("SOCK_NAME:%s\nPOOL_SIZE:%ld\nMAX_FILES:%lld\nMAX_MEMORY:%lld\n", SOCK_NAME, POOL_SIZE, MAX_FILES, MAX_MEMORY);
+    printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%lld\nMAX_MEMORY:%lld\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY);
 }

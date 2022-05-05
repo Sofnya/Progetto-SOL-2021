@@ -2,10 +2,16 @@
 #define GLOBALS_H
 #define UNIX_PATH_MAX 108
 
+
+#include <stdint.h>
+
+
 extern char SOCK_NAME[UNIX_PATH_MAX];
-extern long POOL_SIZE;
-extern long long MAX_FILES;
-extern long long MAX_MEMORY;
+extern uint64_t CORE_POOL_SIZE;
+extern uint64_t MAX_POOL_SIZE;
+extern uint64_t MAX_FILES;
+extern uint64_t MAX_MEMORY;
+
 
 
 void load_config(char *path);

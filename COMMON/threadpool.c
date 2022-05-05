@@ -155,12 +155,15 @@ void *_manage(void *args)
     ThreadPool *pool = (ThreadPool *) args;
     struct _exec *task;
     uint64_t i;
+    //uint64_t count;
     pthread_t *pid;
 
     while(!pool->_terminate)
     {
+        //puts("Running a round of threadpool management:");
         // First we update the list of pids by removing dead threads.
         i = 0;
+        //count = 0;
         while(i < listSize(*pool->pidList))
         {
             listGet(i, (void **)&pid, pool->pidList);
@@ -170,19 +173,29 @@ void *_manage(void *args)
             {
                 listRemove(i, NULL, pool->pidList);
                 free(pid);
+                //count ++;
             }
             else i++;
         }
+        /**if(count != 0)
+        {printf("%ld threads died...\n", count);}
+        printf("Currently alive threads: %d\n", listSize(*pool->pidList));
+        count = 0;*/
         while(listSize(*pool->pidList) < pool->_coreSize)
         {
             _spawnThread(pool);
+            //count ++;
         }
+        /**if(count != 0)
+        {printf("Spawned %ld threads to get to coresize...\n", count);}*/
+        
         if(pool->_queue->_len == 0 && listSize(*pool->pidList) > pool->_coreSize)
         {
             task = malloc(sizeof(struct _exec));
             task->fnc = &_die;
             task->arg = NULL;
             syncqueuePush(task, pool->_queue);
+            //puts("Killed a thread.");
         }
         else if(syncqueueLen(*pool->_queue) > 0 && listSize(*pool->pidList) < pool->_maxSize)
         {
@@ -191,8 +204,10 @@ void *_manage(void *args)
             {
                 _spawnThread(pool);
             }
+            //printf("Spawned %ld threads.\n", threadsToSpawn);
         }
-        sleep(1);
+        //puts("Done with round of management.");
+        usleep(10000);
     }
 
     return 0;
