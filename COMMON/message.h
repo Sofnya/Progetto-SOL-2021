@@ -4,6 +4,16 @@
 
 #include <stdint.h>
 
+#define MT_FOPEN 1
+#define MT_FREAD 2
+#define MT_FWRITE 3
+
+
+#define MS_REQ 0
+#define MS_OK 200
+#define MS_OKCAP 201
+
+
 typedef struct _message {
     uint64_t size;
     void *content;
