@@ -6,6 +6,8 @@ server_objects = SERVER/files.o SERVER/filesystem.o SERVER/globals.o SERVER/serv
 test_objects = TESTS/unitTest.o
 objects =  $(client_objects) $(common_objects) $(server_objects) $(test_objects)
 
+.PHONY: all server client unitTest clean
+
 all: $(objects)
 
 server: $(common_objects) $(server_objects)
@@ -17,11 +19,12 @@ client: $(client_objects) $(common_objects)
 unitTest: TESTS/unitTest.o SERVER/files.o SERVER/filesystem.o $(common_objects) 
 	$(CC) $(CFLAGS) TESTS/unitTest.o SERVER/files.o SERVER/filesystem.o $(common_objects) -o ../out/unitTest.out
 
+apiTester: TESTS/apiTester.o CLIENT/api.o COMMON/message.o
+	$(CC) $(CFLAGS) TESTS/apiTester.o CLIENT/api.o COMMON/message.o -o ../out/apiTester.out
 
 $(objects): %.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
-
 clean:
-	rm -f $(wildcard */*.o)
+	rm -f $(objects)
 	rm -f $(wildcard ../out/*.out)

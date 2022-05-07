@@ -33,6 +33,7 @@ void threadpoolDestroy(ThreadPool *pool)
     struct _exec *cur;
     pthread_t *pid;
 
+    puts("Destroying threadpool!");
     while(syncqueueLen(*pool->_queue) > 0)
     {
         cur = syncqueuePop(pool->_queue);
@@ -48,29 +49,14 @@ void threadpoolDestroy(ThreadPool *pool)
 
 void threadpoolClose(ThreadPool *pool)
 {
+    syncqueueClose(pool->_queue);
     pool->_closed = true;
 }
 
 
 void threadpoolTerminate(ThreadPool *pool)
 {
-    struct _exec *task;
-    int i;
-    
     pool->_terminate = true;
-    
-    while(syncqueueLen(*pool->_queue) > 0)
-    {
-        task = (struct _exec *)syncqueuePop(pool->_queue);
-        free(task);
-    }
-    for(i = listSize(*pool->pidList) + 1; i > 0; i--)
-    {
-        task = malloc(sizeof(struct _exec));
-        task->fnc = &_die;
-        task->arg = NULL;
-        syncqueuePush(task, pool->_queue);
-    }
 }
 
 
@@ -80,7 +66,9 @@ void threadpoolCleanExit(ThreadPool *pool)
     while(syncqueueLen(*pool->_queue) > 0){}
     threadpoolTerminate(pool);
     
+    puts("Joining manager...");
     PTHREAD_CHECK(pthread_join(pool->_manager, NULL));
+    puts("Manager joined!");
 }
 
 
@@ -125,7 +113,7 @@ void *_execLoop(void *args)
     void (*curFunc)(void*);
     void* curArgs;
 
-    bool *terminate = ((struct _execLoopArgs *)args)->terminate;
+    bool volatile *terminate = ((struct _execLoopArgs *)args)->terminate;
     SyncQueue *queue = ((struct _execLoopArgs *)args)->queue; 
 
     free(args);
@@ -155,32 +143,13 @@ void *_manage(void *args)
     ThreadPool *pool = (ThreadPool *) args;
     struct _exec *task;
     uint64_t i;
-    //uint64_t count;
-    pthread_t *pid;
 
     while(!pool->_terminate)
     {
         //puts("Running a round of threadpool management:");
         // First we update the list of pids by removing dead threads.
-        i = 0;
-        //count = 0;
-        while(i < listSize(*pool->pidList))
-        {
-            listGet(i, (void **)&pid, pool->pidList);
+        _updatePids(pool);
 
-            // If the thread is dead we remove it.
-            if(pthread_kill(*pid, 0) != 0)
-            {
-                listRemove(i, NULL, pool->pidList);
-                free(pid);
-                //count ++;
-            }
-            else i++;
-        }
-        /**if(count != 0)
-        {printf("%ld threads died...\n", count);}
-        printf("Currently alive threads: %d\n", listSize(*pool->pidList));
-        count = 0;*/
         while(listSize(*pool->pidList) < pool->_coreSize)
         {
             _spawnThread(pool);
@@ -210,6 +179,13 @@ void *_manage(void *args)
         usleep(10000);
     }
 
+    _threadpoolKILL(pool);
+
+    while(listSize(*pool->pidList) > 0)
+    {
+        puts("Some threads are still alive, waiting for them to die!");
+        _updatePids(pool);
+    }
     return 0;
 }
 
@@ -227,4 +203,47 @@ uint64_t _min(uint64_t a, uint64_t b)
 {
     if(a < b) return a;
     return b;
+}
+
+
+void _threadpoolKILL(ThreadPool *pool)
+{
+    struct _exec *task;
+    int i;
+    
+    puts("Killing threadpool!");
+    while(syncqueueLen(*pool->_queue) > 0)
+    {
+        task = (struct _exec *)syncqueuePop(pool->_queue);
+        free(task);
+    }
+    for(i = listSize(*pool->pidList) + 1; i > 0; i--)
+    {
+        UNSAFE_NULL_CHECK(task = malloc(sizeof(struct _exec)));
+        task->fnc = &_die;
+        task->arg = NULL;
+        syncqueuePush(task, pool->_queue);
+    }
+}   
+
+void _updatePids(ThreadPool *pool)
+{
+    uint64_t i;
+    pthread_t *pid;
+    // First we update the list of pids by removing dead threads.
+    i = 0;
+    //count = 0;
+    while(i < listSize(*pool->pidList))
+    {
+        ERROR_CHECK(listGet(i, (void **)&pid, pool->pidList));
+
+        // If the thread is dead we remove it.
+        if(pthread_kill(*pid, 0) != 0)
+        {
+            listRemove(i, NULL, pool->pidList);
+            free(pid);
+            //count ++;
+        }
+        else i++;
+    }
 }

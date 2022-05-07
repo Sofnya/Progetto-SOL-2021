@@ -19,8 +19,8 @@ typedef struct _ThreadPool {
     SyncQueue *_queue;
     pthread_t _manager;
     List *pidList;
-    bool _closed;
-    bool _terminate;
+    bool volatile _closed;
+    bool volatile _terminate;
     uint64_t _coreSize;
     uint64_t _maxSize;
 } ThreadPool;
@@ -28,7 +28,7 @@ typedef struct _ThreadPool {
 
 struct _execLoopArgs {
     SyncQueue *queue;
-    bool *terminate;
+    bool volatile *terminate;
 };
 
 
@@ -47,6 +47,8 @@ int _spawnThread(ThreadPool *pool);
 void *_execLoop(void *args);
 void *_manage(void *args);
 void _die(void *args);
+void _threadpoolKILL(ThreadPool *pool);
+void _updatePids(ThreadPool *pool);
 
 uint64_t _min(uint64_t a, uint64_t b); 
 #endif

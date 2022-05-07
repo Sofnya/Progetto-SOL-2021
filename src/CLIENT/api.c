@@ -2,6 +2,8 @@
 #include <sys/un.h>
 #include <time.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <stdio.h>
 
 
 #include "CLIENT/api.h"
@@ -31,6 +33,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
     {
         if(connect(sfd, (struct sockaddr*)&sa, sizeof(struct sockaddr_un)) == 0)
         {
+            puts("Connection opened!");
             return 0;
         }
         usleep(msec * 1000);
@@ -45,7 +48,22 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
 
 int closeConnection(const char* sockname)
 {
+    Message m;
+    bool success;
+    
+    SAFE_ERROR_CHECK(messageInit(0, NULL, NULL, MT_DISCONNECT, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+    messageDestroy(&m);
+
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+    success = (m.status == MS_OK);
+    puts(m.info);
+    messageDestroy(&m);
+
+
     close(sfd);
+    if(success) return 0;
+    return -1;
 }
 
 
@@ -72,7 +90,6 @@ int readFile(const char* pathname, void** buf, size_t* size)
 {
     Message m;
     bool success;
-    void *content;
 
     SAFE_ERROR_CHECK(messageInit(0 , NULL, pathname, MT_FREAD, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
@@ -101,7 +118,7 @@ int readNFiles(int N, const char* dirname){return -1;}
 int writeFile(const char* pathname, const char* dirname)
 {
     FILE *fd;
-    long size, result;
+    long size;
     void *buffer;
     Message m;
     bool success;
@@ -139,7 +156,7 @@ int writeFile(const char* pathname, const char* dirname)
         strncpy(pathname, dirname, dirlen);
         strncpy(pathname + dirlen, m.info, pathlen + 1);
 
-        SAFE_ERROR_CHECK(fd = fopen(pathname, "w+"));
+        SAFE_NULL_CHECK(fd = fopen(pathname, "w+"));
         free(pathname);
 
         if(fwrite(m.content, 1, m.size, fd) != m.size)
@@ -159,8 +176,6 @@ int writeFile(const char* pathname, const char* dirname)
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname)
 {
     FILE *fd;
-    long result;
-    void *buffer;
     Message m;
     bool success;
 
@@ -185,7 +200,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
         strncpy(pathname, dirname, dirlen);
         strncpy(pathname + dirlen, m.info, pathlen + 1);
 
-        SAFE_ERROR_CHECK(fd = fopen(pathname, "w+"));
+        SAFE_NULL_CHECK(fd = fopen(pathname, "w+"));
         free(pathname);
 
         if(fwrite(m.content, 1, m.size, fd) != m.size)

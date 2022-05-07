@@ -61,7 +61,7 @@ int main()
     threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
     while(1){
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
-        curFd = malloc(sizeof(int));
+        SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
         *curFd = fdc;
         threadpoolSubmit(&handleConnection, curFd, &pool);
         
@@ -78,23 +78,25 @@ void handleConnection(void *fdc)
     Message *request;
     Message *response;
     int fd = *(int *)fdc;
+    bool done = false;
     free(fdc);
 
-    UNSAFE_NULL_CHECK(request = malloc(sizeof(Message)));
+    while(!done){
+        UNSAFE_NULL_CHECK(request = malloc(sizeof(Message)));
 
-    receiveMessage(fd, request);
+        receiveMessage(fd, request);
 
-    puts(request->info);
-    
+        done = (request->type == MT_DISCONNECT);
+        response = parseRequest(request);
+        sendMessage(fd, response); 
+        
 
-    response = parseRequest(request);
-    sendMessage(fd, response);    
-    
-    messageDestroy(request);
-    messageDestroy(response);
-    
-    free(request);
-    free(response);
+        messageDestroy(request);
+        messageDestroy(response);
+        
+        free(request);
+        free(response);
+    }
     close(fd);
     
     return;
@@ -107,11 +109,40 @@ Message *parseRequest(Message *request)
     UNSAFE_NULL_CHECK(response = malloc(sizeof(Message)));
     switch(request->type)
     {
-        case(0):
-            messageInit(0,NULL, "Hey to u too", 0, 200, response);
+        case(MT_INFO):
+            messageInit(0,NULL, "Hello to you too!", MT_INFO, MS_OK, response);
             return response;
+        
+        case(MT_FOPEN):
+            messageInit(0, NULL, "File opened!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_FCLOSE):
+            messageInit(0, NULL, "File closed!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_FREAD):
+            messageInit(5, "test", "Read done!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_FWRITE):
+            messageInit(0, NULL, "Write done!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_FAPPEND):
+            messageInit(0, NULL, "Append done!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_FREM):
+            messageInit(0, NULL, "File removed!", MT_INFO, MS_OK, response);
+            return response;
+
+        case(MT_DISCONNECT):
+            messageInit(0, NULL, "Ok, bye!", MT_INFO, MS_OK, response);
+            return response;
+
         default:
-            messageInit(0, NULL, "Invalid request.", 0, 400, response);
+            messageInit(0, NULL, "Invalid request.", MT_INFO, MS_INV, response);
             return response;
     }
 }
@@ -123,6 +154,7 @@ void cleanup(void)
     close(sfd);
     unlink(SOCK_NAME);
     threadpoolCleanExit(&pool);
+
     threadpoolDestroy(&pool);
 
     fsDestroy(&fs);

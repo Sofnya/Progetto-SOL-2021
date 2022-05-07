@@ -19,7 +19,7 @@
  * @param m the message to be initialized.
  * @return int 0 on a success, -1 and sets errno on error.
  */
-int messageInit(uint64_t size, void *content, char *info, int type, int status, Message *m)
+int messageInit(uint64_t size, const void *content, const char *info, int type, int status, Message *m)
 {
     size_t len;
     if(size < 0 || m == NULL)
