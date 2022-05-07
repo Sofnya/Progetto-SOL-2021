@@ -2,8 +2,8 @@
 #include <assert.h>
 #include <stdlib.h>
 
-#include "../COMMON/syncqueue.h"
-#include "../COMMON/macros.h"
+#include "COMMON/syncqueue.h"
+#include "COMMON/macros.h"
 
 
 

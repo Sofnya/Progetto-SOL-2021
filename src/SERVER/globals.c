@@ -1,4 +1,4 @@
-#include "globals.h"
+#include "SERVER/globals.h"
 #include "COMMON/macros.h"
 
 #include <string.h>

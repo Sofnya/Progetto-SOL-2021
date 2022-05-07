@@ -7,7 +7,7 @@
 #include <pthread.h>
 
 
-#include "../COMMON/message.h"
+#include "COMMON/message.h"
 
 #define SOCK_NAME "testSocket"
 

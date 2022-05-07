@@ -4,9 +4,9 @@
 #include <stdbool.h>
 
 
-#include "api.h"
-#include "../COMMON/message.h"
-#include "../COMMON/macros.h"
+#include "CLIENT/api.h"
+#include "COMMON/message.h"
+#include "COMMON/macros.h"
 
 
 #define UNIX_PATH_MAX 108

@@ -1,5 +1,5 @@
-#include "syncqueue.h"
-#include "macros.h"
+#include "COMMON/syncqueue.h"
+#include "COMMON/macros.h"
 
 
 void syncqueueInit(SyncQueue *queue)

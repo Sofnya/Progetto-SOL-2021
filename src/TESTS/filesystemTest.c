@@ -3,8 +3,8 @@
 #include <string.h>
 
 
-#include "../filesystem.h"
-#include "../COMMON/macros.h"
+#include "SERVER/filesystem.h"
+#include "COMMON/macros.h"
 
 
 int main(int argc, char const *argv[])

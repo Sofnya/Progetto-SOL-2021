@@ -2,8 +2,8 @@
 #include <string.h>
 
 
-#include "../files.h"
-#include "../COMMON/macros.h"
+#include "SERVER/files.h"
+#include "COMMON/macros.h"
 
 
 int main(int argc, char const *argv[])

@@ -3,7 +3,7 @@
 #include <unistd.h>
 
 
-#include "../COMMON/threadpool.h"
+#include "COMMON/threadpool.h"
 
 
 void test(void *par)

@@ -1,4 +1,3 @@
-#include "hashtable.h"
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -7,7 +6,8 @@
 #include <assert.h>
 #endif
 
-#include "macros.h"
+#include "COMMON/hashtable.h"
+#include "COMMON/macros.h"
 
 
 #define SEED 1337

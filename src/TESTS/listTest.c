@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "list.h"
-#include "macros.h"
+#include "COMMON/list.h"
+#include "COMMON/macros.h"
 
 int main(int argc, char const *argv[])
 {

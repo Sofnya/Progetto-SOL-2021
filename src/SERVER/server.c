@@ -11,8 +11,8 @@
 #include "COMMON/macros.h"
 #include "COMMON/threadpool.h"
 #include "COMMON/message.h"
-#include "filesystem.h"
-#include "globals.h"
+#include "SERVER/filesystem.h"
+#include "SERVER/globals.h"
 
 
 #define UNIX_PATH_MAX 108

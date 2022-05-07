@@ -1,9 +1,9 @@
-#include "list.h"
-
 #include <stdlib.h>
 #include <errno.h>
 
-#include "macros.h"
+
+#include "COMMON/list.h"
+#include "COMMON/macros.h"
 
 /**
  * @brief Initializes the list. Should always be called before using it.
