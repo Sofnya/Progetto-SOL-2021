@@ -3,28 +3,28 @@ CFLAGS = -g -Wall -pthread
 
 
 server:
-	$(CC) $(CFLAGS) server.c COMMON/*.c  globals.c -o server.out
+	$(CC) $(CFLAGS) SERVER/*.c COMMON/*.c  globals.c -o ARTIFACTS/server.out
 
 client:
-	$(CC) $(CFLAGS) client.c COMMON/*.c -o client.out
+	$(CC) $(CFLAGS) CLIENT/*.c COMMON/*.c -o ARTIFACTS/client.out
 
 filesTest:
-	$(CC) $(CFLAGS) TESTS/filesTest.c files.c COMMON/* -o filesTest.out
+	$(CC) $(CFLAGS) TESTS/filesTest.c SERVER/files.c COMMON/* -o ARTIFACTS/filesTest.out
 
 filesystemTest:
-	$(CC) $(CFLAGS) TESTS/filesystemTest.c filesystem.c files.c COMMON/* -o filesystemTest.out
+	$(CC) $(CFLAGS) TESTS/filesystemTest.c SERVER/filesystem.c SERVER/files.c COMMON/* -o ARTIFACTS/filesystemTest.out
 
 messageTest:
-	$(CC) $(CFLAGS) TESTS/messageTest.c COMMON/message.c -o messageTest.out
+	$(CC) $(CFLAGS) TESTS/messageTest.c COMMON/message.c -o ARTIFACTS/messageTest.out
 
 listTest:
-	$(CC) $(CFLAGS) TESTS/listTest.c COMMON/list.c -o list.out
+	$(CC) $(CFLAGS) TESTS/listTest.c COMMON/list.c -o ARTIFACTS/list.out
 
 hashtableTest:
-	$(CC) $(CFLAGS) TESTS/hashtableTest.c COMMON/hashtable.c COMMON/murmur3.c COMMON/list.c -o hashtable.out
+	$(CC) $(CFLAGS) TESTS/hashtableTest.c COMMON/hashtable.c COMMON/murmur3.c COMMON/list.c -o ARTIFACTS/hashtable.out
 
 syncqueueTest:
-	$(CC) $(CFLAGS) TESTS/syncqueueTest.c COMMON/syncqueue.c -o syncqueueTest.out
+	$(CC) $(CFLAGS) TESTS/syncqueueTest.c COMMON/syncqueue.c -o ARTIFACTS/syncqueueTest.out
 
 threadpoolTest:
-	$(CC) $(CFLAGS) TESTS/threadpoolTest.c COMMON/threadpool.c COMMON/syncqueue.c COMMON/list.c -o threadpoolTest.out
+	$(CC) $(CFLAGS) TESTS/threadpoolTest.c COMMON/threadpool.c COMMON/syncqueue.c COMMON/list.c -o ARTIFACTS/threadpoolTest.out

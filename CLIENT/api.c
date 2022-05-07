@@ -154,3 +154,92 @@ int writeFile(const char* pathname, const char* dirname)
     if(success) return 0;
     return -1;
 }
+
+
+int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname)
+{
+    FILE *fd;
+    long result;
+    void *buffer;
+    Message m;
+    bool success;
+
+
+    
+    SAFE_ERROR_CHECK(messageInit(size, buf, pathname, MT_FAPPEND, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+
+    success = (m.status == MS_OK || m.status == MS_OKCAP);
+    puts(m.info);
+
+    if((m.status == MS_OKCAP) && (dirname != NULL))
+    {
+        char *pathname;
+        size_t dirlen, pathlen;
+        dirlen = strlen(dirname);
+        pathlen = strlen(m.info);
+
+        SAFE_NULL_CHECK(pathname = malloc(dirlen + pathlen + 1));
+        strncpy(pathname, dirname, dirlen);
+        strncpy(pathname + dirlen, m.info, pathlen + 1);
+
+        SAFE_ERROR_CHECK(fd = fopen(pathname, "w+"));
+        free(pathname);
+
+        if(fwrite(m.content, 1, m.size, fd) != m.size)
+        {
+            errno = EIO;
+            return -1;
+        }
+
+    }
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
+
+//TODO
+int lockFile(const char* pathname){return -1;}
+int unlockFile(const char* pathname){return -1;}
+
+
+int closeFile(const char* pathname)
+{
+    Message m;
+    bool success;
+
+    SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FCLOSE, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+    success = (m.status == MS_OK);
+    puts(m.info);
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
+
+
+int removeFile(const char* pathname)
+{
+    Message m;
+    bool success;
+
+    SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FREM, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+    success = (m.status == MS_OK);
+    puts(m.info);
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
+

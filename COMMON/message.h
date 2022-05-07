@@ -4,9 +4,13 @@
 
 #include <stdint.h>
 
+
 #define MT_FOPEN 1
-#define MT_FREAD 2
-#define MT_FWRITE 3
+#define MT_FCLOSE 2
+#define MT_FREAD 3
+#define MT_FWRITE 4
+#define MT_FAPPEND 5
+#define MT_FREM 6
 
 
 #define MS_REQ 0
