@@ -24,6 +24,7 @@ ThreadPool pool;
 FileSystem fs;
 
 void handleConnection(void *fdc);
+Message *parseRequest(Message *request);
 void cleanup(void);
 void signalHandler(const int signum) {
     puts("Exiting");

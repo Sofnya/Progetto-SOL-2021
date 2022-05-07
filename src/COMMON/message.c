@@ -21,6 +21,7 @@
  */
 int messageInit(uint64_t size, void *content, char *info, int type, int status, Message *m)
 {
+    size_t len;
     if(size < 0 || m == NULL)
     {
         errno = EINVAL;
@@ -40,8 +41,10 @@ int messageInit(uint64_t size, void *content, char *info, int type, int status, 
 
     if(info != NULL)
     {
-        SAFE_NULL_CHECK(m->info = malloc(strlen(info)));
+        len = strlen(info);
+        SAFE_NULL_CHECK(m->info = malloc(len + 1));
         strcpy(m->info, info);
+        m->info[len] = '\00';
     }
     else
     {
@@ -84,7 +87,7 @@ int sendMessage(int fd, Message *m)
 
     if(m->info != NULL)
     {
-        infoSize = strlen(m->info);
+        infoSize = strlen(m->info) + 1;
     }else
     {
         infoSize = 0;
