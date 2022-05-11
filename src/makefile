@@ -22,6 +22,9 @@ unitTest: TESTS/unitTest.o SERVER/files.o SERVER/filesystem.o $(common_objects)
 apiTester: TESTS/apiTester.o CLIENT/api.o COMMON/message.o
 	$(CC) $(CFLAGS) TESTS/apiTester.o CLIENT/api.o COMMON/message.o -o ../out/apiTester.out
 
+stressTester: TESTS/stressTester.o CLIENT/api.o COMMON/message.o
+	$(CC) $(CFLAGS) TESTS/stressTester.o CLIENT/api.o COMMON/message.o -o ../out/stressTester.out
+
 $(objects): %.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 

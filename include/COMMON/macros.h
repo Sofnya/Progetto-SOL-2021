@@ -9,5 +9,6 @@
 #define UNSAFE_NULL_CHECK(arg) if((arg) == NULL) { perror("Error"); exit(EXIT_FAILURE); }
 #define SAFE_NULL_CHECK(arg) if((arg) == NULL) { perror("Error"); return -1; }
 #define PTHREAD_CHECK(arg) if((errno = (arg)) != 0) { perror("Error on a pthread call"); exit(EXIT_FAILURE); }
+#define READ_CHECK(arg) if((arg) <= 0) {if(errno != 0) perror("Error on a read"); return -1;}
 
 #endif

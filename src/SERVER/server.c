@@ -40,6 +40,7 @@ int main()
     signal(SIGTERM, &signalHandler);
     signal(SIGQUIT, &signalHandler);
     signal(SIGINT, &signalHandler);
+    sigaction(SIGPIPE, &(struct sigaction){SIG_IGN}, NULL);
 
     atexit(&cleanup);
 
@@ -82,13 +83,29 @@ void handleConnection(void *fdc)
     free(fdc);
 
     while(!done){
-        UNSAFE_NULL_CHECK(request = malloc(sizeof(Message)));
+        if((request = malloc(sizeof(Message))) == NULL)
+        {
+            perror("Error on malloc");
+            return;
+        }
 
-        receiveMessage(fd, request);
+
+        if(receiveMessage(fd, request) == -1)
+        {
+            perror("Error on receiveMessage");
+            messageDestroy(request);
+            free(request);
+            return;
+        }
 
         done = (request->type == MT_DISCONNECT);
         response = parseRequest(request);
-        sendMessage(fd, response); 
+        
+        if(sendMessage(fd, response) == -1)
+        {
+            perror("Error on sendMessage");
+            return;
+        } 
         
 
         messageDestroy(request);

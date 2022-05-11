@@ -33,7 +33,7 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
     {
         if(connect(sfd, (struct sockaddr*)&sa, sizeof(struct sockaddr_un)) == 0)
         {
-            puts("Connection opened!");
+            printf("Connection opened! %d\n", sfd);
             return 0;
         }
         usleep(msec * 1000);
@@ -112,7 +112,7 @@ int readFile(const char* pathname, void** buf, size_t* size)
 }
 
 //TODO
-int readNFiles(int N, const char* dirname){return -1;}
+int readNFiles(int N, const char* dirname){return 0;}
 
 
 int writeFile(const char* pathname, const char* dirname)
@@ -217,8 +217,8 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 }
 
 //TODO
-int lockFile(const char* pathname){return -1;}
-int unlockFile(const char* pathname){return -1;}
+int lockFile(const char* pathname){return 0;}
+int unlockFile(const char* pathname){return 0;}
 
 
 int closeFile(const char* pathname)

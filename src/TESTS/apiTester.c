@@ -28,7 +28,7 @@ int main(int argc, char const *argv[])
     unlockFile("testFile");
     removeFile("testFile");
     closeConnection(SOCKNAME);
-
+    
     puts("all done!");
 
     return 0;

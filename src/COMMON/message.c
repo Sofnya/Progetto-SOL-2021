@@ -31,6 +31,7 @@ int messageInit(uint64_t size, const void *content, const char *info, int type, 
     m->size = size;
     if(size != 0)
     {
+        printf("Init: Allocating %ld bytes for content\n", size);
         SAFE_NULL_CHECK(m->content = malloc(size));
         memcpy(m->content, content, size);
     }
@@ -42,6 +43,8 @@ int messageInit(uint64_t size, const void *content, const char *info, int type, 
     if(info != NULL)
     {
         len = strlen(info);
+
+        printf("Init: Allocating %ld bytes for info\n", len + 1);
         SAFE_NULL_CHECK(m->info = malloc(len + 1));
         strcpy(m->info, info);
         m->info[len] = '\00';
@@ -112,33 +115,38 @@ int sendMessage(int fd, Message *m)
 
 int receiveMessage(int fd, Message *m)
 {
-    uint64_t infoSize;
+    uint64_t infoSize = 0;
 
-    SAFE_ERROR_CHECK(read(fd, &m->type, sizeof(int)));
-    SAFE_ERROR_CHECK(read(fd, &m->status, sizeof(int)));
+    printf("Receiving message on %d\n", fd);
+
+    READ_CHECK(read(fd, &m->type, sizeof(int)));
+    READ_CHECK(read(fd, &m->status, sizeof(int)));
 
 
-    SAFE_ERROR_CHECK(read(fd, &infoSize, sizeof(uint64_t)));
+    READ_CHECK(read(fd, &infoSize, sizeof(uint64_t)));
     if(infoSize <= 0)
     {
         m->info = NULL;
     }
     else
     {
+        printf("Allocating %ld bytes for info\n", infoSize);
         SAFE_NULL_CHECK(m->info = malloc(infoSize));
-        SAFE_ERROR_CHECK(read(fd, m->info, infoSize));
+        READ_CHECK(read(fd, m->info, infoSize));
     }
 
 
-    SAFE_ERROR_CHECK(read(fd, &m->size, sizeof(uint64_t)));
+    READ_CHECK(read(fd, &m->size, sizeof(uint64_t)));
     if(m->size <= 0)
     {
         m->content = NULL;
     }
     else
     {
+
+        printf("Allocating %ld bytes for content\n", m->size);
         SAFE_NULL_CHECK(m->content = malloc(m->size));
-        SAFE_ERROR_CHECK(read(fd, m->content, m->size));
+        READ_CHECK(read(fd, m->content, m->size));
     }
 
     return 0;
