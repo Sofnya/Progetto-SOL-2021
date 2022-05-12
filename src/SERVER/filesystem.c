@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 
 #include "SERVER/filesystem.h"
@@ -57,21 +58,28 @@ void fsDestroy(FileSystem *fs)
     char *cur;
     File *curFile;
 
-    
+    puts("Destroying FileSystem!");
     while(listSize(*fs->filesList) > 0)
     {
-        //UNSAFE_NULL_CHECK(curFile = malloc(sizeof(File)));
+        UNSAFE_NULL_CHECK(curFile = malloc(sizeof(File)));
         listPop((void **)&cur, fs->filesList);
-        hashTableRemove(cur, (void **)&curFile, *fs->filesTable);
-        
-        fileDestroy(curFile);
-        free(curFile);
+        puts(cur);
+        puts("Just a print...");
+        if(hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
+        {
+            fileDestroy(curFile);
+            free(curFile);
+        }
     }
+
+    puts("Some more prints");
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
     pthread_mutex_destroy(fs->filesListMtx);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
+
+    puts("Now freeing!");
 
     free(fs->filesList);
     free(fs->filesTable);
@@ -90,13 +98,14 @@ void fsDestroy(FileSystem *fs)
  * @param fs 
  * @return int 
  */
-int openFile(char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
+int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
     File *file;
     FileDescriptor *newFd;
     int res;
 
 
+    if(pathname == NULL) puts("\n\n\n\n\n\n\n\n\nSomething very wrong!");
     res = hashTableGet(pathname, (void **)&file, *fs->filesTable);
 
     if(flags & O_CREATE)
@@ -114,7 +123,11 @@ int openFile(char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         
         
         PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
-        ERROR_CHECK(listAppend(file->name, fs->filesList));
+
+        ERROR_CHECK(listAppend((void *)file->name, fs->filesList));
+        puts("Creating file:");
+        puts(file->name);
+
         PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
         atomicInc(1, fs->curN);
@@ -260,6 +273,9 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
 int removeFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
+    void *saveptr = NULL;
+    char *name;
+    int i;
 
     if(!(fd->flags & FI_WRITE))
     {
@@ -268,13 +284,54 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     }
 
 
-    SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
+    
+    PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+    i = 0;
+    puts("Current list state:");
+    while(listScan((void **)&name, &saveptr, fs->filesList) != -1)
+    {
+        puts(name);
+        if(!strcmp(name,fd->name))
+        {
+            puts("Removing file:");
+            puts(name);
+            listRemove(i, NULL, fs->filesList);
+            break;
+        }
+        i++;
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
-    SAFE_ERROR_CHECK(fileLock(file));
+
+    SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
+    
+
+    //SAFE_ERROR_CHECK(fileLock(file));
     atomicDec(getFileSize(file), fs->curSize);
     atomicDec(1, fs->curN);
 
     fileDestroy(file);
 
     return 0;
+}
+
+/**
+ * @brief Get the size of the file of chosen name.
+ * 
+ * @param pathname the name of the file.
+ * @param fs the fileSystem containing the file
+ * @return uint64_t the size of the file if it exists, 0 and sets errno otherwise.
+ */
+uint64_t getSize(const char* pathname, FileSystem *fs)
+{
+    File *file;
+
+    if(hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
+    { 
+        errno = EINVAL;
+        return 0;
+    }
+
+    errno = 0;
+    return getFileSize(file);
 }

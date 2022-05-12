@@ -10,7 +10,7 @@
 
 
 typedef struct _file{
-    char *name;
+    const char *name;
     void *content;
     uint64_t size;
     pthread_mutex_t *mtx;
@@ -31,6 +31,6 @@ int fileUnlock(File *file);
 
 
 uint64_t getFileSize(File *file);
-char *getFileName(File *file);
+const char *getFileName(File *file);
 
 #endif

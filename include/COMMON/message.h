@@ -19,6 +19,8 @@
 #define MS_OK 200
 #define MS_OKCAP 201
 #define MS_INV 400
+#define MS_ERR 401
+#define MS_INTERR 402
 
 
 typedef struct _message {

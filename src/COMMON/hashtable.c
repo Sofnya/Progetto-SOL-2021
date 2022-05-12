@@ -204,6 +204,29 @@ void _rowDestroy(struct _row row)
     free(row.mtx);
 }
 
+/**
+ * @brief Pops an element from given row.
+ * 
+ * @param el where the entry will be stored.
+ * @param row the row to be modified.
+ * @return int 0 on success, -1 on failure.
+ */
+int _rowPop(struct _entry *el, struct _row row)
+{
+    struct _entry *curel;
+    int tmp;
+    
+    PTHREAD_CHECK(pthread_mutex_lock(row.mtx));
+
+    tmp = listPop((void **)&curel, row.row);
+    if(tmp == 0)
+    {
+        *el = *curel;
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(row.mtx));
+
+    return tmp;
+}
 
 /**
  * @brief Initializes the given HashTable, with given size.
@@ -309,7 +332,7 @@ int hashTableRemove(const char *key, void **value, HashTable table)
  * @param table the table to be modified.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int hashTablePut(char *key, void *value, HashTable table)
+int hashTablePut(const char *key, void *value, HashTable table)
 {
     uint64_t loc;
     struct _entry entry;
@@ -320,6 +343,37 @@ int hashTablePut(char *key, void *value, HashTable table)
     entry.value = value;
 
     return _rowPut(entry, table._table[loc]);
+}
+
+/**
+ * @brief Pops an element from the table. A copy of it's key will be stored in key and it's value will be stored in value.
+ * 
+ * @param key where the element's key will be stored.
+ * @param value where the element's value will be stored.
+ * @param table the table to modify.
+ * @return int 0 on success, -1 and sets errno otherwise (if table is empty).
+ */
+int hashTablePop(char **key, void **value, HashTable table)
+{
+    struct _entry result;
+    int i = 0, tmp = -1;
+
+    while(tmp == -1 && i < table.size)
+    {
+        tmp = _rowPop(&result, table._table[i]);
+        i++;
+    }
+    
+    if(tmp == -1)
+    {
+        errno = ENOENT;
+        return -1;
+    }
+
+    *key = result.key;
+    *value = result.value;
+    
+    return 0;
 }
 
 /**

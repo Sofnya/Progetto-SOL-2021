@@ -17,14 +17,16 @@ int main(int argc, char const *argv[])
     abstime.tv_sec += 10;
 
     openConnection(SOCKNAME, 100, abstime);
-    openFile("testFile", 0);
+    openFile("testFile", O_CREATE);
     lockFile("testFile");
-    readFile("testFile", &buf, &size);
-    puts((char *) buf);
 
-    readNFiles(10, "./");
+
     writeFile("testFile", "./");
+    
     appendToFile("testFile", (void *)"aaaa", 5, "./");
+
+    readFile("testFile", &buf, &size);
+    readNFiles(10, "./");
     unlockFile("testFile");
     removeFile("testFile");
     closeConnection(SOCKNAME);

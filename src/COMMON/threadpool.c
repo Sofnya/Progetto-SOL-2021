@@ -8,7 +8,6 @@
 #include "COMMON/threadpool.h"
 #include "COMMON/macros.h"
 
-
 void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool)
 {
     pool->_coreSize = coreSize;
@@ -198,7 +197,7 @@ void *_manage(void *args)
         #ifdef TP_DEBUG
         printf("%ld threads are still alive, waiting for them to die!\n", atomicGet(pool->alive));
         #endif
-        usleep(1000);
+        usleep(100000);
     }
     return 0;
 }

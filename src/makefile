@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g -Wall -pthread -I ../include
 client_objects = CLIENT/api.o CLIENT/client.o 
 common_objects = COMMON/atomicint.o COMMON/hashtable.o COMMON/list.o COMMON/message.o COMMON/murmur3.o COMMON/syncqueue.o COMMON/threadpool.o 
-server_objects = SERVER/files.o SERVER/filesystem.o SERVER/globals.o SERVER/server.o 
+server_objects = SERVER/files.o SERVER/filesystem.o SERVER/globals.o SERVER/server.o SERVER/connstate.o
 test_objects = TESTS/unitTest.o
 objects =  $(client_objects) $(common_objects) $(server_objects) $(test_objects)
 
@@ -22,8 +22,8 @@ unitTest: TESTS/unitTest.o SERVER/files.o SERVER/filesystem.o $(common_objects)
 apiTester: TESTS/apiTester.o CLIENT/api.o COMMON/message.o
 	$(CC) $(CFLAGS) TESTS/apiTester.o CLIENT/api.o COMMON/message.o -o ../out/apiTester.out
 
-stressTester: TESTS/stressTester.o CLIENT/api.o COMMON/message.o
-	$(CC) $(CFLAGS) TESTS/stressTester.o CLIENT/api.o COMMON/message.o -o ../out/stressTester.out
+stressTester: 
+	cp TESTS/stressTester.sh  ../out/stressTester.sh
 
 $(objects): %.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@

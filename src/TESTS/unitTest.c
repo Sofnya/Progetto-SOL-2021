@@ -132,6 +132,9 @@ int messageTest()
     assert(m->type == 1);
 
 
+    pthread_join(pid, NULL);
+    messageDestroy(m);
+    free(m);
     cleanup();
     return 0;
 }

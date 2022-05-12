@@ -31,7 +31,10 @@ int messageInit(uint64_t size, const void *content, const char *info, int type, 
     m->size = size;
     if(size != 0)
     {
+        #ifdef DEBUG
         printf("Init: Allocating %ld bytes for content\n", size);
+        #endif
+
         SAFE_NULL_CHECK(m->content = malloc(size));
         memcpy(m->content, content, size);
     }
@@ -44,7 +47,10 @@ int messageInit(uint64_t size, const void *content, const char *info, int type, 
     {
         len = strlen(info);
 
+        #ifdef DEBUG
         printf("Init: Allocating %ld bytes for info\n", len + 1);
+        #endif
+
         SAFE_NULL_CHECK(m->info = malloc(len + 1));
         strcpy(m->info, info);
         m->info[len] = '\00';
@@ -117,7 +123,9 @@ int receiveMessage(int fd, Message *m)
 {
     uint64_t infoSize = 0;
 
+    #ifdef DEBUG
     printf("Receiving message on %d\n", fd);
+    #endif
 
     READ_CHECK(read(fd, &m->type, sizeof(int)));
     READ_CHECK(read(fd, &m->status, sizeof(int)));
@@ -130,7 +138,10 @@ int receiveMessage(int fd, Message *m)
     }
     else
     {
+        #ifdef DEBUG
         printf("Allocating %ld bytes for info\n", infoSize);
+        #endif
+
         SAFE_NULL_CHECK(m->info = malloc(infoSize));
         READ_CHECK(read(fd, m->info, infoSize));
     }
@@ -143,8 +154,10 @@ int receiveMessage(int fd, Message *m)
     }
     else
     {
-
+        #ifdef DEBUG
         printf("Allocating %ld bytes for content\n", m->size);
+        #endif
+        
         SAFE_NULL_CHECK(m->content = malloc(m->size));
         READ_CHECK(read(fd, m->content, m->size));
     }

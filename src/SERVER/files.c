@@ -34,7 +34,7 @@ int fileInit(const char *name, File *file)
  */
 void fileDestroy(File *file)
 {
-    free(file->name);
+    free((void *)file->name);
     free(file->content);
 
     PTHREAD_CHECK(pthread_mutex_destroy(file->mtx));
@@ -161,7 +161,7 @@ uint64_t getFileSize(File *file)
  * @param file 
  * @return char* 
  */
-char *getFileName(File *file)
+const char *getFileName(File *file)
 {
     return file->name;
 }

@@ -32,7 +32,7 @@ typedef struct _filesystem{
 
 
 typedef struct _fileDescriptor {
-    char *name;
+    const char *name;
     pid_t pid;
     int flags;
 } FileDescriptor;
@@ -41,7 +41,7 @@ typedef struct _fileDescriptor {
 int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
-int openFile(char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
+int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
 int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs);
@@ -51,6 +51,8 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs);
 int lockFile(const char* pathname, FileSystem *fs);
 int unlockFile(const char* pathname, FileSystem *fs);
 int removeFile(FileDescriptor *fd, FileSystem *fs);
+
+uint64_t getSize(const char* pathname, FileSystem *fs);
 
 
 #endif
