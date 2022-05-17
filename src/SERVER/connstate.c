@@ -30,6 +30,7 @@ void connStateDestroy(ConnState *state)
     }
 
     hashTableDestroy(state->fds);
+    free(state->fds);
 }
 
 

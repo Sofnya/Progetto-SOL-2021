@@ -68,8 +68,9 @@ void fsDestroy(FileSystem *fs)
         if(hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
         {
             fileDestroy(curFile);
-            free(curFile);
         }
+        free(curFile);
+        free(cur);
     }
 
     puts("Some more prints");
@@ -101,32 +102,39 @@ void fsDestroy(FileSystem *fs)
 int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
     File *file;
+    char *nameCopy;
     FileDescriptor *newFd;
-    int res;
 
 
     if(pathname == NULL) puts("\n\n\n\n\n\n\n\n\nSomething very wrong!");
-    res = hashTableGet(pathname, (void **)&file, *fs->filesTable);
+    
 
     if(flags & O_CREATE)
     {
-        if(res == 0) 
+        PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+        if(hashTableGet(pathname, (void **)&file, *fs->filesTable) == 0) 
         {
+
+            PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
             errno = EINVAL;
             return -1;
         }
         
         SAFE_NULL_CHECK(file = malloc(sizeof(File)));
+        SAFE_NULL_CHECK(nameCopy = malloc(strlen(pathname) + 1));
+
+        strcpy(nameCopy, pathname);
+        
         ERROR_CHECK(fileInit(pathname, file));
 
         ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable));
         
         
-        PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
 
-        ERROR_CHECK(listAppend((void *)file->name, fs->filesList));
+
+        ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList));
         puts("Creating file:");
-        puts(file->name);
+        puts(nameCopy);
 
         PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
@@ -145,7 +153,8 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
     }
     else
     {
-        if(res == -1)
+        
+        if(hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
         {
             errno = EINVAL;
             return -1;
@@ -277,6 +286,9 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     char *name;
     int i;
 
+    puts("Calling removefile.");
+    printf("Name: |%s|\n", fd->name);
+
     if(!(fd->flags & FI_WRITE))
     {
         errno = EINVAL;
@@ -288,14 +300,17 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
     i = 0;
     puts("Current list state:");
+    printf("Len:%lld\n", fs->filesList->size);
     while(listScan((void **)&name, &saveptr, fs->filesList) != -1)
     {
-        puts(name);
+        printf("%d:%p->|%s|\n", i, name, name);
         if(!strcmp(name,fd->name))
         {
             puts("Removing file:");
             puts(name);
-            listRemove(i, NULL, fs->filesList);
+            listRemove(i, (void **)&name, fs->filesList);
+            printf("Actually removed: |%s|\n", name);
+            free(name);
             break;
         }
         i++;
@@ -311,6 +326,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     atomicDec(1, fs->curN);
 
     fileDestroy(file);
+    free(file);
 
     return 0;
 }
