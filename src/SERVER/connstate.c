@@ -122,3 +122,31 @@ int conn_removeFile(const char *path, ConnState state)
     free(fd);
     return tmp;
 }
+
+
+int conn_lockFile(const char *path, ConnState state)
+{
+    FileDescriptor *fd;
+
+    if(hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return lockFile(fd, state.fs);
+}
+
+
+int conn_unlockFile(const char *path, ConnState state)
+{
+    FileDescriptor *fd;
+
+    if(hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    return unlockFile(fd, state.fs);
+}

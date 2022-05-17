@@ -217,8 +217,42 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
 }
 
 //TODO
-int lockFile(const char* pathname){return 0;}
-int unlockFile(const char* pathname){return 0;}
+int lockFile(const char* pathname)
+{
+    Message m;
+    bool success;
+    
+    SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FLOCK, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+    success = (m.status == MS_OK);
+    puts(m.info);
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
+
+
+int unlockFile(const char* pathname)
+{
+    Message m;
+    bool success;
+    
+    SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FUNLOCK, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+    success = (m.status == MS_OK);
+    puts(m.info);
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
 
 
 int closeFile(const char* pathname)

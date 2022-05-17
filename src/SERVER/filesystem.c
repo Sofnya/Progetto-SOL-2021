@@ -128,8 +128,6 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
         ERROR_CHECK(fileInit(pathname, file));
 
         ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable));
-        
-        
 
 
         ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList));
@@ -143,13 +141,7 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         newFd->name = file->name;
         newFd->pid = getpid();
-        newFd->flags = FI_READ | FI_WRITE;
-
-        *fd = newFd;
-
-
-        return 0;
-
+        newFd->flags = FI_READ | FI_WRITE | FI_APPEND;
     }
     else
     {
@@ -163,17 +155,25 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         newFd->name = file->name;
         newFd->pid = getpid();
-        newFd->flags = FI_READ | FI_WRITE;
-
-        *fd = newFd;
-
-        return 0;
+        newFd->flags = FI_READ | FI_APPEND;
     }
+
+    if(flags & O_LOCK) 
+    {
+        lockFile(newFd, fs);
+    }
+    *fd = newFd;
+
+    return 0;
 }
 
 
 int closeFile(FileDescriptor *fd, FileSystem *fs)
 {
+    if(fd->flags & FI_LOCK)
+    {
+        unlockFile(fd, fs);
+    }
     free(fd);
     return 0;
 }
@@ -222,7 +222,7 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     File *file;
     uint64_t oldSize;
 
-    if(!(fd->flags & FI_WRITE))
+    if(!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
         errno = EINVAL;
         return -1;
@@ -230,10 +230,8 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
-    SAFE_ERROR_CHECK(fileLock(file));
     oldSize = getFileSize(file);
     SAFE_ERROR_CHECK(fileWrite(buf, size, file));
-    SAFE_ERROR_CHECK(fileUnlock(file));
     
     atomicInc(size - oldSize, fs->curSize);
 
@@ -254,7 +252,27 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
     File *file;
 
 
-    if(!(fd->flags & FI_WRITE))
+    if(!((fd->flags & FI_APPEND) && (fd->flags & FI_LOCK)))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+
+    SAFE_ERROR_CHECK(fileAppend(buf, size, file));
+
+
+    atomicInc(size, fs->curSize);
+
+    return 0;
+}
+
+
+int lockFile(FileDescriptor *fd, FileSystem *fs)
+{
+    File *file;
+    if(fd->flags & FI_LOCK)
     {
         errno = EINVAL;
         return -1;
@@ -263,14 +281,30 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
     SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
     SAFE_ERROR_CHECK(fileLock(file));
-    SAFE_ERROR_CHECK(fileAppend(buf, size, file));
-    SAFE_ERROR_CHECK(fileUnlock(file));
-
-
-    atomicInc(size, fs->curSize);
+    fd->flags |= FI_LOCK;
 
     return 0;
 }
+
+
+
+int unlockFile(FileDescriptor *fd, FileSystem *fs)
+{
+    File *file;
+    if(!(fd->flags & FI_LOCK))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+
+    SAFE_ERROR_CHECK(fileUnlock(file));
+    fd->flags &= ~FI_LOCK;
+
+    return 0;
+}
+
 
 /**
  * @brief Removes the file described by fd from the FileSystem.
@@ -289,7 +323,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     puts("Calling removefile.");
     printf("Name: |%s|\n", fd->name);
 
-    if(!(fd->flags & FI_WRITE))
+    if(!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
         errno = EINVAL;
         return -1;
@@ -321,10 +355,10 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
     
 
-    //SAFE_ERROR_CHECK(fileLock(file));
     atomicDec(getFileSize(file), fs->curSize);
     atomicDec(1, fs->curN);
 
+    fileUnlock(file);
     fileDestroy(file);
     free(file);
 

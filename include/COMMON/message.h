@@ -13,6 +13,8 @@
 #define MT_FAPPEND 5
 #define MT_FREM 6
 #define MT_DISCONNECT 7
+#define MT_FLOCK 8
+#define MT_FUNLOCK 9
 
 
 #define MS_REQ 0

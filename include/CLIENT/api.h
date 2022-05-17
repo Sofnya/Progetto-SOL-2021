@@ -6,7 +6,6 @@
 
 #define O_LOCK      00000001
 #define O_CREATE    00000002
-#define O_APPEND    00000010
 
 
 extern int sfd;

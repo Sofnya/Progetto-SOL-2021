@@ -247,6 +247,31 @@ Message *parseRequest(Message *request, ConnState state)
             return response;
         }
         
+        case (MT_FLOCK):
+        {
+            if(conn_lockFile(request->info, state) == 0)
+            {
+                messageInit(0, NULL, "File Locked!", MT_INFO, MS_OK, response);
+            }
+            else
+            {
+                messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            }
+            return response;
+        }
+
+        case(MT_FUNLOCK):
+        {
+            if(conn_unlockFile(request->info, state) == 0)
+            {
+                messageInit(0, NULL, "File Unlocked!", MT_INFO, MS_OK, response);
+            }
+            else
+            {
+                messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            }
+            return response;
+        }
         default:
         {
             messageInit(0, NULL, "Invalid request.", MT_INFO, MS_INV, response);

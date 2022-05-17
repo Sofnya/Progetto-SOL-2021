@@ -27,7 +27,6 @@ int main(int argc, char const *argv[])
 
     readFile("testFile", &buf, &size);
     readNFiles(10, "./");
-    unlockFile("testFile");
     removeFile("testFile");
     closeConnection(SOCKNAME);
     

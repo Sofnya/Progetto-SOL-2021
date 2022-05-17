@@ -15,10 +15,11 @@
 
 #define O_LOCK      00000001
 #define O_CREATE    00000002
-#define O_APPEND    00000010
+
 
 #define FI_READ      00000001
 #define FI_WRITE     00000002
+#define FI_APPEND    00000004
 #define FI_LOCK      00000010
 
 
@@ -48,8 +49,8 @@ int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs);
 int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs);
 
-int lockFile(const char* pathname, FileSystem *fs);
-int unlockFile(const char* pathname, FileSystem *fs);
+int lockFile(FileDescriptor *fd, FileSystem *fs);
+int unlockFile(FileDescriptor *fd, FileSystem *fs);
 int removeFile(FileDescriptor *fd, FileSystem *fs);
 
 uint64_t getSize(const char* pathname, FileSystem *fs);
