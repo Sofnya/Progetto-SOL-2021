@@ -11,6 +11,7 @@
 #include "COMMON/macros.h"
 #include "COMMON/threadpool.h"
 #include "COMMON/message.h"
+#include "COMMON/helpers.h"
 #include "SERVER/filesystem.h"
 #include "SERVER/globals.h"
 #include "SERVER/connstate.h"
@@ -24,10 +25,17 @@ int sfd;
 ThreadPool pool;
 FileSystem fs;
 
+struct _messageArgs{
+    int fd;
+    Message *m;
+};
 
 void handleConnection(void *fdc);
 Message *parseRequest(Message *request, ConnState state);
 void cleanup(void);
+
+int _receiveMessageWrapper(void *args);
+int _sendMessageWrapper(void *args);
 
 
 void signalHandler(const int signum) {
@@ -83,8 +91,17 @@ void handleConnection(void *fdc)
     Message *request;
     Message *response;
     ConnState state;
+    
+    
+    struct timespec maxWait;
+    struct _messageArgs args;
+    maxWait.tv_nsec = 0;
+    maxWait.tv_sec = 5;
 
     int fd = *(int *)fdc;
+    int err;
+    args.fd = fd;
+    
     bool done = false;
     free(fdc);
 
@@ -94,27 +111,41 @@ void handleConnection(void *fdc)
         if((request = malloc(sizeof(Message))) == NULL)
         {
             perror("Error on malloc");
-            return;
+            done = true;
+            continue;
         }
 
+        request->size = 0;
+        request->content = NULL;
+        request->info = NULL;
+        request->type = 0;
+        request->status = 0;
 
-        if(receiveMessage(fd, request) == -1)
+        args.m = request;
+        err = timeoutCall(_receiveMessageWrapper, (void *)&args ,maxWait);
+        if(err == -1 || err == ETIMEDOUT)
         {
-            perror("Error on receiveMessage");
-            return;
+            if (err != -1) perror("Error on receive");
+            done = true;
+            messageDestroy(request);
+            free(request);
+            continue;
         }
 
         done = (request->type == MT_DISCONNECT);
         response = parseRequest(request, state);
         
-        if(sendMessage(fd, response) == -1)
+        args.m = response;
+        err = timeoutCall(_sendMessageWrapper, (void *)&args ,maxWait);
+        if(err == -1 || err == ETIMEDOUT)
         {
-            perror("Error on sendMessage");
+            if (err != -1) perror("Error on send");
+            done = true;
             messageDestroy(request);
             free(request);
             messageDestroy(response);
             free(response);
-            return;
+            continue;
         } 
         
         messageDestroy(request);
@@ -122,6 +153,7 @@ void handleConnection(void *fdc)
         free(request);
         free(response);
     }
+
     close(fd);
     connStateDestroy(&state);
     puts("Done bye");
@@ -295,3 +327,16 @@ void cleanup(void)
     puts("Done cleaning up!");
 }
 
+
+
+
+int _receiveMessageWrapper(void *args)
+{
+    struct _messageArgs tmp = *((struct _messageArgs *) args);
+    return receiveMessage(tmp.fd, tmp.m);
+}
+int _sendMessageWrapper(void *args)
+{
+    struct _messageArgs tmp = *((struct _messageArgs *) args);
+    return sendMessage(tmp.fd, tmp.m);
+}
