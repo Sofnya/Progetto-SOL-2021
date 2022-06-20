@@ -304,6 +304,36 @@ Message *parseRequest(Message *request, ConnState state)
             }
             return response;
         }
+
+        case(MT_FREADN):
+        {
+            FileContainer *fc;
+            void *buf = NULL;
+            uint64_t amount, n, size, i;
+
+            n = *(uint64_t *) request->content;
+            printf("Reading %ld files..\n", n);
+            if((amount = conn_readNFiles(n, &fc, state)) > 0)
+            {
+                puts("Ehm");
+                printf("Actually %ld files..\n", amount);
+                serializeContainerArray(fc, amount, &size, &buf);
+                puts("Howdy!");
+                messageInit(size, buf, "Read done!", MT_INFO, MS_OK, response);
+                for(i = 0; i < amount; i++)
+                {
+                    destroyContainer(&fc[i]);
+                }
+                free(fc);
+                free(buf);
+            }
+            else
+            {
+                messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            }
+            return response;
+        }
+
         default:
         {
             messageInit(0, NULL, "Invalid request.", MT_INFO, MS_INV, response);

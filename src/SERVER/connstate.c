@@ -107,6 +107,16 @@ int conn_appendFile(const char *path, void *buf, size_t size, ConnState state)
 }
 
 
+int conn_readNFiles(uint64_t N, FileContainer **fcs, ConnState state)
+{
+    int tmp;
+    tmp = readNFiles(N, fcs, state.fs);
+    puts("Really really done with readN");
+
+    return tmp;
+}
+
+
 int conn_removeFile(const char *path, ConnState state)
 {
     FileDescriptor *fd;

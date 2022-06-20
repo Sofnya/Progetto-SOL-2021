@@ -11,6 +11,7 @@
 #include "COMMON/hashtable.h"
 #include "COMMON/list.h"
 #include "COMMON/atomicint.h"
+#include "COMMON/fileContainer.h"
 
 
 #define O_LOCK      00000001
@@ -49,7 +50,7 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs);
 int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs);
 
-int readNFiles(int N, void ***buf, size_t *size, FileSystem *fs);
+int readNFiles(int N, FileContainer **buf, FileSystem *fs);
 
 int lockFile(FileDescriptor *fd, FileSystem *fs);
 int unlockFile(FileDescriptor *fd, FileSystem *fs);

@@ -28,7 +28,7 @@ int main(int argc, char const *argv[])
     readFile("testFile", &buf, &size);
     readNFiles(10, "./");
     removeFile("testFile");
-    //closeConnection(SOCKNAME);
+    closeConnection(SOCKNAME);
     
     sleep(5);
     puts("all done!");

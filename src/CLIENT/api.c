@@ -9,6 +9,7 @@
 #include "CLIENT/api.h"
 #include "COMMON/message.h"
 #include "COMMON/macros.h"
+#include "COMMON/fileContainer.h"
 
 
 #define UNIX_PATH_MAX 108
@@ -111,13 +112,13 @@ int readFile(const char* pathname, void** buf, size_t* size)
     return -1;
 }
 
-//TODO
+
 int readNFiles(int N, const char* dirname)
 {
     Message m;
     bool success;
-    void **buf;
-    int *size;
+    FileContainer *fc;
+    uint64_t amount, i;
 
     SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, NULL, MT_FREADN, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
@@ -127,17 +128,24 @@ int readNFiles(int N, const char* dirname)
 
     success = (m.status == MS_OK);
     puts(m.info);
-    if(success)
-    {
-        *size = m.size;
-        SAFE_NULL_CHECK(*buf = malloc(m.size));
-        memcpy(*buf, m.content, m.size);
-    }
-    messageDestroy(&m);
 
-    if(success) return 0;
-    return -1;
-}
+    if(!success)
+    {
+        messageDestroy(&m);
+        return -1;
+    }
+
+    fc = deserializeContainerArray(m.content, m.size, &amount);
+    for(i = 0; i < amount; i++)
+    {
+        printf("Received file.%ld : %s : %s\n", i, fc[i].name, (char *)fc[i].content);
+        destroyContainer(&fc[i]);
+    }
+
+    free(fc);
+
+    return 0;
+    }
 
 
 int writeFile(const char* pathname, const char* dirname)

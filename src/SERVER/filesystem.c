@@ -278,38 +278,46 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
  * @param fs The fileSystem to query.
  * @return int on success, the number of files actually read, on error -1 and sets errno.
  */
-int readNFiles(int N, void ***buf, size_t *size, FileSystem *fs)
+int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 {
     FileDescriptor *curFD;
     char *cur = NULL;
-    void *saveptr = NULL;
     int amount, i;
+    uint64_t curSize;
+    void *curBuffer;
 
 
     pthread_mutex_lock(fs->filesListMtx);
     
-    if(N < 0 || N > fs->curN) amount = fs->curN;
-    else amount = N;
+    puts("Lock acquired");
 
-    SAFE_NULL_CHECK(buf = malloc(sizeof(void *) * amount));
-    SAFE_NULL_CHECK(size = malloc(sizeof(size_t) * amount));
-    
+    amount = atomicGet(fs->curN);
+    if(N > 0 && N < amount) amount = N;
+    SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * amount));
 
+    puts("Initial malloc done");
     for(i = 0; i < amount; i++)
     {
-        SAFE_ERRROR_CHECK(listGet(i, &cur, fs->filesList));
+        printf("Reading file:%d\n", i);
+        SAFE_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList));
 
-        size[i] = getSize(cur, fs);
-        buf[i] = malloc(size[i]);
+        puts("ListGet done!!");
+        curSize = getSize(cur, fs);
+        SAFE_NULL_CHECK(curBuffer = malloc(curSize));
 
-        openFile(cur, FI_READ, &curFD, fs);
+        SAFE_ERROR_CHECK(openFile(cur, 0, &curFD, fs));
+        puts("fileOpened!");        
+        SAFE_ERROR_CHECK(readFile(curFD, curBuffer, curSize, fs));
+        SAFE_ERROR_CHECK(closeFile(curFD, fs));
+
+        puts("Initializing container..");
+        containerInit(curSize, curBuffer, cur, buf[i]);
         
-        readFile(curFD, buf[i], size[i], fs);
-        closeFile(curFD, fs);
+        free(curBuffer);
     }
-
     pthread_mutex_unlock(fs->filesListMtx);
 
+    puts("Ok done with readN!");
     return amount;
 }
 

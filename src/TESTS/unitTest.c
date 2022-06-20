@@ -15,6 +15,7 @@
 #include "COMMON/list.h"
 #include "COMMON/macros.h"
 #include "COMMON/hashtable.h"
+#include "COMMON/fileContainer.h"
 #include "SERVER/filesystem.h"
 #include "SERVER/files.h"
 
@@ -321,9 +322,11 @@ int filesystemTest()
     ERROR_CHECK(fsInit(100, 2048, fs));
 
     ERROR_CHECK(openFile("file1", O_CREATE, &fd, fs));
+    ERROR_CHECK(lockFile(fd, fs));
     ERROR_CHECK(writeFile(fd, (void *)contents, 5, fs));
     ERROR_CHECK(appendToFile(fd, (void *)contents, 5, fs));
 
+    ERROR_CHECK(unlockFile(fd, fs));
     UNSAFE_NULL_CHECK(tmp = malloc(11));
     tmp[10] = '\00';
 
@@ -376,6 +379,63 @@ int filesTest()
 }
 
 
+int fileContainerTest()
+{
+    FileContainer fc, fc2, array[2], *result;
+    void *buf;
+    void *content = "abcdefghijk";
+    char *name = "fileName.txt", *name2 = "anotherFile.txt";
+    uint64_t size, n;
+
+    assert(containerInit(5, content, name, &fc) == 0);
+
+    assert(strcmp(fc.name, name) == 0);
+    assert(strncmp(fc.content, content, 5) == 0);
+    assert(fc.size == 5);
+
+    assert(serializeContainer(fc, &buf, &size) == 0);
+
+    destroyContainer(&fc);
+
+    fc2 = deserializeContainer(buf, size);
+    assert(strcmp(fc2.name, name) == 0);
+    assert(strncmp(fc2.content, content, 5) == 0);
+    assert(fc2.size == 5);
+    destroyContainer(&fc2);
+    free(buf);
+    buf = NULL;
+
+    puts("Now testing arrays...");
+    assert(containerInit(5, content, name, &fc) == 0);
+    assert(containerInit(10, content, name2, &fc2) == 0);
+
+    puts("Serializing");
+    array[0] = fc;
+    array[1] = fc2;
+    assert(serializeContainerArray(array, 2, &size, &buf) == 0);
+
+    puts("Deserializing");
+    result = deserializeContainerArray(buf, size, &n);
+    assert(n == 2);
+
+    puts("Checking coherence");
+    assert(strcmp(result[0].name, name) == 0);
+    assert(strcmp(result[1].name, name2) == 0);
+
+    assert(strncmp(result[0].content, content, fc.size) == 0);
+    assert(strncmp(result[1].content, content, fc2.size) == 0);
+    assert(result[0].size == 5);
+    assert(result[1].size == 10);
+
+    destroyContainer(&result[0]);
+    destroyContainer(&result[1]);
+    destroyContainer(&fc);
+    destroyContainer(&fc2);
+    
+    free(buf);
+
+    return 0;
+}
 
 
 int main(int argc, char const *argv[])
@@ -404,6 +464,10 @@ int main(int argc, char const *argv[])
     assert(threadpoolTest() == 0);
     puts("threadpoolTest succesfull!\n");
 
-    puts("\nOK!\nALL TESTS SUCCESFULL!");
+    puts("Starting fileContainerTest");
+    assert(fileContainerTest() == 0);
+    puts("fileContainerTest succesfull!\n");
+
+    puts("OK!\nALL TESTS SUCCESFULL!");
     return 0;
 }
