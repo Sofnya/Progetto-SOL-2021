@@ -269,6 +269,53 @@ int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs)
 }
 
 
+/**
+ * @brief Reads N files in the given buffer. Buf and size will be malloced, so remember to free them after use.
+ * 
+ * @param N The number of files to read, if N < 0 reads all of the servers files.
+ * @param buf Where the files will be stored, will become an array of buffers.
+ * @param size Where bufs sizes will be stored, also an array.
+ * @param fs The fileSystem to query.
+ * @return int on success, the number of files actually read, on error -1 and sets errno.
+ */
+int readNFiles(int N, void ***buf, size_t *size, FileSystem *fs)
+{
+    FileDescriptor *curFD;
+    char *cur = NULL;
+    void *saveptr = NULL;
+    int amount, i;
+
+
+    pthread_mutex_lock(fs->filesListMtx);
+    
+    if(N < 0 || N > fs->curN) amount = fs->curN;
+    else amount = N;
+
+    SAFE_NULL_CHECK(buf = malloc(sizeof(void *) * amount));
+    SAFE_NULL_CHECK(size = malloc(sizeof(size_t) * amount));
+    
+
+    for(i = 0; i < amount; i++)
+    {
+        SAFE_ERRROR_CHECK(listGet(i, &cur, fs->filesList));
+
+        size[i] = getSize(cur, fs);
+        buf[i] = malloc(size[i]);
+
+        openFile(cur, FI_READ, &curFD, fs);
+        
+        readFile(curFD, buf[i], size[i], fs);
+        closeFile(curFD, fs);
+    }
+
+    pthread_mutex_unlock(fs->filesListMtx);
+
+    return amount;
+}
+
+
+
+
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;

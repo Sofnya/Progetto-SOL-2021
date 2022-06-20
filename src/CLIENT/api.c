@@ -112,7 +112,32 @@ int readFile(const char* pathname, void** buf, size_t* size)
 }
 
 //TODO
-int readNFiles(int N, const char* dirname){return 0;}
+int readNFiles(int N, const char* dirname)
+{
+    Message m;
+    bool success;
+    void **buf;
+    int *size;
+
+    SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, NULL, MT_FREADN, MS_REQ, &m));
+    SAFE_ERROR_CHECK(sendMessage(sfd, &m));
+
+    messageDestroy(&m);
+    SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
+
+    success = (m.status == MS_OK);
+    puts(m.info);
+    if(success)
+    {
+        *size = m.size;
+        SAFE_NULL_CHECK(*buf = malloc(m.size));
+        memcpy(*buf, m.content, m.size);
+    }
+    messageDestroy(&m);
+
+    if(success) return 0;
+    return -1;
+}
 
 
 int writeFile(const char* pathname, const char* dirname)
@@ -216,7 +241,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
     return -1;
 }
 
-//TODO
+
 int lockFile(const char* pathname)
 {
     Message m;

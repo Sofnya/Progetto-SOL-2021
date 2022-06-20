@@ -45,9 +45,11 @@ void fsDestroy(FileSystem *fs);
 int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
-int readFile(FileDescriptor *fd, void** buf, size_t size, FileSystem *fs);
+int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs);
 int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 int appendToFile(FileDescriptor *fd, void* buf, size_t size, FileSystem *fs);
+
+int readNFiles(int N, void ***buf, size_t *size, FileSystem *fs);
 
 int lockFile(FileDescriptor *fd, FileSystem *fs);
 int unlockFile(FileDescriptor *fd, FileSystem *fs);

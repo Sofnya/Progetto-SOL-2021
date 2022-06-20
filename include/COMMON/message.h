@@ -15,6 +15,8 @@
 #define MT_DISCONNECT 7
 #define MT_FLOCK 8
 #define MT_FUNLOCK 9
+#define MT_FREADN 9
+
 
 
 #define MS_REQ 0
