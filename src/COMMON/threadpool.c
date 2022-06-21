@@ -7,6 +7,7 @@
 
 #include "COMMON/threadpool.h"
 #include "COMMON/macros.h"
+#include "SERVER/logging.h"
 
 void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool)
 {
@@ -30,7 +31,7 @@ void threadpoolDestroy(ThreadPool *pool)
 {
     struct _exec *cur;
     
-    puts("Destroying threadpool!");
+    logger("Destroying threadpool!");
     while(syncqueueLen(*pool->_queue) > 0)
     {
         cur = syncqueuePop(pool->_queue);
@@ -61,9 +62,9 @@ void threadpoolCleanExit(ThreadPool *pool)
     while(syncqueueLen(*pool->_queue) > 0){}
     threadpoolTerminate(pool);
     
-    puts("Joining manager...");
+    logger("Joining manager...");
     PTHREAD_CHECK(pthread_join(pool->_manager, NULL));
-    puts("Manager joined!");
+    logger("Manager joined!");
 }
 
 

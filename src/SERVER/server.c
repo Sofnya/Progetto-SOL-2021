@@ -15,6 +15,7 @@
 #include "SERVER/filesystem.h"
 #include "SERVER/globals.h"
 #include "SERVER/connstate.h"
+#include "SERVER/logging.h"
 
 
 #define UNIX_PATH_MAX 108
@@ -34,6 +35,7 @@ void handleConnection(void *fdc);
 Message *parseRequest(Message *request, ConnState state);
 
 void logConnection(ConnState state);
+void logDisconnect(ConnState state);
 void logRequest(Message *request, ConnState state);
 void logResponse(Message *response, ConnState state);
 
@@ -44,7 +46,7 @@ int _sendMessageWrapper(void *args);
 
 
 void signalHandler(const int signum) {
-    puts("Exiting");
+    logger("Exiting");
     exit(EXIT_FAILURE);
 }
 
@@ -163,9 +165,9 @@ void handleConnection(void *fdc)
         free(response);
     }
 
+    logDisconnect(state);
     close(fd);
     connStateDestroy(&state);
-    puts("Done bye");
     return;
 }
 
@@ -174,13 +176,12 @@ Message *parseRequest(Message *request, ConnState state)
 {
     Message *response;
 
-    logRequest(request, state);
     UNSAFE_NULL_CHECK(response = malloc(sizeof(Message)));
     switch(request->type)
     {
         case (MT_INFO):
         {
-            messageInit(0,NULL, "Hello to you too!", MT_INFO, MS_OK, response);
+            messageInit(0,NULL, "Hello", MT_INFO, MS_OK, response);
             return response;
         }
 
@@ -192,7 +193,7 @@ Message *parseRequest(Message *request, ConnState state)
                 flags = *((int *)(request->content));
                 if(conn_openFile(request->info, flags, state) == 0)
                 {
-                    messageInit(0, NULL, "File opened!", MT_INFO, MS_OK, response);
+                    messageInit(0, NULL, "File opened", MT_INFO, MS_OK, response);
                 }
                 else
                 {
@@ -206,7 +207,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_closeFile(request->info, state) == 0)
             {
-                    messageInit(0, NULL, "File closed!", MT_INFO, MS_OK, response);
+                    messageInit(0, NULL, "File closed", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -235,7 +236,7 @@ Message *parseRequest(Message *request, ConnState state)
             }
             if(conn_readFile(request->info, &buf, size, state) == 0)
             {
-                messageInit(size, buf, "Read done!", MT_INFO, MS_OK, response);
+                messageInit(size, buf, "Read done", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -249,7 +250,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_writeFile(request->info, request->content, request->size, state) == 0)
             {
-                messageInit(0, NULL, "Write done!", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "Write done", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -262,7 +263,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_appendFile(request->info, request->content, request->size, state) == 0)
             {
-                messageInit(0, NULL, "Append done!", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "Append done", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -275,7 +276,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_removeFile(request->info, state) == 0)
             {
-                messageInit(0, NULL, "File Removed!", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "File Removed", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -286,7 +287,7 @@ Message *parseRequest(Message *request, ConnState state)
 
         case (MT_DISCONNECT):
         {
-            messageInit(0, NULL, "Ok, bye!", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "Disconnected", MT_INFO, MS_OK, response);
             return response;
         }
         
@@ -294,7 +295,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_lockFile(request->info, state) == 0)
             {
-                messageInit(0, NULL, "File Locked!", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "File Locked", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -307,7 +308,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             if(conn_unlockFile(request->info, state) == 0)
             {
-                messageInit(0, NULL, "File Unlocked!", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "File Unlocked", MT_INFO, MS_OK, response);
             }
             else
             {
@@ -322,6 +323,7 @@ Message *parseRequest(Message *request, ConnState state)
             void *buf = NULL;
             int amount, i, n;
             uint64_t size;
+            char info[200];
 
             n = *(int *) request->content;
             amount = conn_readNFiles(n, &fc, state);
@@ -329,7 +331,8 @@ Message *parseRequest(Message *request, ConnState state)
             if(amount > 0)
             {
                 serializeContainerArray(fc, amount, &size, &buf);
-                messageInit(size, buf, "Read done!", MT_INFO, MS_OK, response);
+                sprintf(info, "Read %d files", amount);
+                messageInit(size, buf, info, MT_INFO, MS_OK, response);
                 for(i = 0; i < amount; i++)
                 {
                     destroyContainer(&fc[i]);
@@ -339,6 +342,7 @@ Message *parseRequest(Message *request, ConnState state)
             }
             else
             {
+                free(fc);
                 messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
             }
             return response;
@@ -355,7 +359,7 @@ Message *parseRequest(Message *request, ConnState state)
 
 void cleanup(void)
 {
-    puts("Cleaning up!");
+    logger("Cleaning up!");
     close(sfd);
     unlink(SOCK_NAME);
     threadpoolCleanExit(&pool);
@@ -364,7 +368,7 @@ void cleanup(void)
 
     fsDestroy(&fs);
 
-    puts("Done cleaning up!");
+    logger("Done cleaning up!");
 }
 
 
@@ -385,13 +389,101 @@ int _sendMessageWrapper(void *args)
 
 void logConnection(ConnState state)
 {
-    printf("%s\t>Connection\n", state.uuid);
+    char parsed[36 + 100];
+    sprintf(parsed, "%s >Connected", state.uuid);
+    logger(parsed);
 }
+
+void logDisconnect(ConnState state)
+{
+    char parsed[36 + 100];
+    sprintf(parsed, "%s >Disconnected", state.uuid);
+    logger(parsed);
+}
+
 void logRequest(Message *request, ConnState state)
 {
-    printf("%s\t>Request\n", state.uuid);
+    char *parsed;
+    if(request->info == NULL)
+    {
+        parsed = malloc(500);
+        sprintf(parsed, "%s >Request:MALFORMED", state.uuid);
+    }
+    else{
+        parsed = malloc(strlen(request->info) + 500);
+        switch(request->type)
+        {
+            case(MT_INFO):
+            {
+                sprintf(parsed, "%s >Request:INFO >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FOPEN):
+            {
+                sprintf(parsed, "%s >Request:OPEN >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FCLOSE):
+            {
+                sprintf(parsed, "%s >Request:CLOSE >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FREAD):
+            {
+                sprintf(parsed, "%s >Request:READ >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FWRITE):
+            {
+                sprintf(parsed, "%s >Request:WRITE >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FAPPEND):
+            {
+                sprintf(parsed, "%s >Request:APPEND >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FREM):
+            {
+                sprintf(parsed, "%s >Request:REMOVE >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_DISCONNECT):
+            {
+                sprintf(parsed, "%s >Request:DISCONNECT >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FLOCK):
+            {
+                sprintf(parsed, "%s >Request:LOCK >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FUNLOCK):
+            {
+                sprintf(parsed, "%s >Request:UNLOCK >%s", state.uuid, request->info);
+                break;
+            }
+            case(MT_FREADN):
+            {
+                sprintf(parsed, "%s >Request:READN >%s", state.uuid, request->info);
+                break;
+            }
+
+        }
+    }
+    logger(parsed);
+    free(parsed);
 }
 void logResponse(Message *response, ConnState state)
-{
-    printf("%s\t>Response\n", state.uuid);
+{    
+    char parsed[36 + 500];
+    if(response->info == NULL)
+    {
+        sprintf(parsed, "%s >Response:MALFORMED", state.uuid);
+    }
+    else
+    {
+        sprintf(parsed, "%s >Response:%s", state.uuid, response->info);
+    }
+    logger(parsed);
 }

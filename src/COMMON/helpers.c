@@ -43,11 +43,8 @@ int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait)
 
     if(err) 
     {
-        puts("Error, cancelling!");
         pthread_cancel(pid);
-        puts("Joining...");
         PTHREAD_CHECK(pthread_join(pid, NULL));
-        puts("Done?");
         errno = err;
         return 0;
     }

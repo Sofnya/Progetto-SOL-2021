@@ -52,7 +52,7 @@ int closeConnection(const char* sockname)
     Message m;
     bool success;
     
-    SAFE_ERROR_CHECK(messageInit(0, NULL, NULL, MT_DISCONNECT, MS_REQ, &m));
+    SAFE_ERROR_CHECK(messageInit(0, NULL, "Goodbye", MT_DISCONNECT, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
     messageDestroy(&m);
 
@@ -119,8 +119,11 @@ int readNFiles(int N, const char* dirname)
     bool success;
     FileContainer *fc;
     uint64_t amount, i;
+    char info[100];
 
-    SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, "please giv files", MT_FREADN, MS_REQ, &m));
+    sprintf(info, "Requesting %d files", N);
+
+    SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, info, MT_FREADN, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);

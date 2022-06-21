@@ -115,7 +115,7 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
 
     if(n == 0)
     {
-        puts("Called serialize with 0 size array, shouldn't happen, bye!");
+        puts("Called serialize with 0 size array, this shouldn't happen!");
         return -1;
     }
     for(i = 0; i < n; i++)

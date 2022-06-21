@@ -7,6 +7,7 @@
 
 
 char SOCK_NAME[UNIX_PATH_MAX] = "default_address";
+char LOG_FILE[UNIX_PATH_MAX] = "logger";
 uint64_t CORE_POOL_SIZE = 8;
 uint64_t MAX_POOL_SIZE = UINT64_MAX;
 uint64_t MAX_FILES = 100;
@@ -46,19 +47,22 @@ void load_config(char *path)
             strncpy(SOCK_NAME, value, UNIX_PATH_MAX -1);
             SOCK_NAME[UNIX_PATH_MAX-1] = '\00'; 
         }
+        else if(!strcmp(option, "LOG_FILE"))
+        {
+            strncpy(LOG_FILE, value, UNIX_PATH_MAX -1);
+            LOG_FILE[UNIX_PATH_MAX-1] = '\00'; 
+        }
         else if (!strcmp(option, "CORE_POOL_SIZE"))
         {
             errno = 0;
             tmp = strtoll(value, NULL, 0);
-            if(errno != 0)
+            if(errno != 0 || tmp < 0)
             {
                 perror("Error");
                 printf("Invalid value on line %d, ignoring.\n", lineN);
                 continue;
             }
-            else if(tmp > 0){
             CORE_POOL_SIZE = tmp;
-            }
         }
         else if (!strcmp(option, "MAX_POOL_SIZE"))
         {
@@ -70,9 +74,8 @@ void load_config(char *path)
                 printf("Invalid value on line %d, ignoring.\n", lineN);
                 continue;
             }
-            else if(tmp > 0){
-            CORE_POOL_SIZE = tmp;
-            }
+            if(tmp >= 0) MAX_POOL_SIZE = tmp;
+            else MAX_POOL_SIZE = UINT64_MAX;
         }
         else if (!strcmp(option, "MAX_FILES"))
         {

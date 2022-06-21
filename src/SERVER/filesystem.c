@@ -58,13 +58,10 @@ void fsDestroy(FileSystem *fs)
     char *cur;
     File *curFile;
 
-    puts("Destroying FileSystem!");
     while(listSize(*fs->filesList) > 0)
     {
         UNSAFE_NULL_CHECK(curFile = malloc(sizeof(File)));
         listPop((void **)&cur, fs->filesList);
-        puts(cur);
-        puts("Just a print...");
         if(hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
         {
             fileDestroy(curFile);
@@ -73,15 +70,13 @@ void fsDestroy(FileSystem *fs)
         free(cur);
     }
 
-    puts("Some more prints");
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
     pthread_mutex_destroy(fs->filesListMtx);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
 
-    puts("Now freeing!");
-
+    
     free(fs->filesList);
     free(fs->filesTable);
     free(fs->filesListMtx);
@@ -131,8 +126,6 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
 
 
         ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList));
-        puts("Creating file:");
-        puts(nameCopy);
 
         PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
@@ -367,8 +360,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     char *name;
     int i;
 
-    puts("Calling removefile.");
-    printf("Name: |%s|\n", fd->name);
+
 
     if(!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
@@ -380,17 +372,15 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     
     PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
     i = 0;
-    puts("Current list state:");
-    printf("Len:%lld\n", fs->filesList->size);
+
     while(listScan((void **)&name, &saveptr, fs->filesList) != -1)
     {
         printf("%d:%p->|%s|\n", i, name, name);
         if(!strcmp(name,fd->name))
         {
-            puts("Removing file:");
-            puts(name);
+
             listRemove(i, (void **)&name, fs->filesList);
-            printf("Actually removed: |%s|\n", name);
+
             free(name);
             break;
         }
