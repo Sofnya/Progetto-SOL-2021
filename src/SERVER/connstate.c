@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <errno.h>
+#include <uuid/uuid.h>
 
 
 #include "SERVER/connstate.h"
@@ -10,8 +11,11 @@
 
 int connStateInit(FileSystem *fs, ConnState *state)
 {
+    uuid_t tmp;
     SAFE_NULL_CHECK(state->fds = malloc(sizeof(HashTable)));
     state->fs = fs;
+    uuid_generate(tmp);
+    uuid_unparse(tmp, state->uuid);
 
     return hashTableInit(16, state->fds);
 }
@@ -107,11 +111,10 @@ int conn_appendFile(const char *path, void *buf, size_t size, ConnState state)
 }
 
 
-int conn_readNFiles(uint64_t N, FileContainer **fcs, ConnState state)
+int conn_readNFiles(int N, FileContainer **fcs, ConnState state)
 {
     int tmp;
     tmp = readNFiles(N, fcs, state.fs);
-    puts("Really really done with readN");
 
     return tmp;
 }

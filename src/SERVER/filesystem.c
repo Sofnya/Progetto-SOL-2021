@@ -288,36 +288,28 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 
 
     pthread_mutex_lock(fs->filesListMtx);
-    
-    puts("Lock acquired");
+
 
     amount = atomicGet(fs->curN);
     if(N > 0 && N < amount) amount = N;
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * amount));
 
-    puts("Initial malloc done");
     for(i = 0; i < amount; i++)
     {
-        printf("Reading file:%d\n", i);
-        SAFE_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList));
-
-        puts("ListGet done!!");
+        CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), pthread_mutex_unlock(fs->filesListMtx));
         curSize = getSize(cur, fs);
-        SAFE_NULL_CHECK(curBuffer = malloc(curSize));
+        CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, pthread_mutex_unlock(fs->filesListMtx));
 
-        SAFE_ERROR_CHECK(openFile(cur, 0, &curFD, fs));
-        puts("fileOpened!");        
-        SAFE_ERROR_CHECK(readFile(curFD, curBuffer, curSize, fs));
-        SAFE_ERROR_CHECK(closeFile(curFD, fs));
+        CLEANUP_ERROR_CHECK(openFile(cur, 0, &curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});     
+        CLEANUP_ERROR_CHECK(readFile(curFD, &curBuffer, curSize, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});
+        CLEANUP_ERROR_CHECK(closeFile(curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});
 
-        puts("Initializing container..");
         containerInit(curSize, curBuffer, cur, buf[i]);
         
         free(curBuffer);
     }
     pthread_mutex_unlock(fs->filesListMtx);
 
-    puts("Ok done with readN!");
     return amount;
 }
 

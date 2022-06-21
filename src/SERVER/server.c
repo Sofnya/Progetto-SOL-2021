@@ -32,6 +32,11 @@ struct _messageArgs{
 
 void handleConnection(void *fdc);
 Message *parseRequest(Message *request, ConnState state);
+
+void logConnection(ConnState state);
+void logRequest(Message *request, ConnState state);
+void logResponse(Message *response, ConnState state);
+
 void cleanup(void);
 
 int _receiveMessageWrapper(void *args);
@@ -105,8 +110,9 @@ void handleConnection(void *fdc)
     bool done = false;
     free(fdc);
 
-
     connStateInit(&fs, &state);
+
+    logConnection(state);
     while(!done){
         if((request = malloc(sizeof(Message))) == NULL)
         {
@@ -133,7 +139,10 @@ void handleConnection(void *fdc)
         }
 
         done = (request->type == MT_DISCONNECT);
+
+        logRequest(request, state);
         response = parseRequest(request, state);
+        logResponse(response, state);
         
         args.m = response;
         err = timeoutCall(_sendMessageWrapper, (void *)&args ,maxWait);
@@ -164,6 +173,8 @@ void handleConnection(void *fdc)
 Message *parseRequest(Message *request, ConnState state)
 {
     Message *response;
+
+    logRequest(request, state);
     UNSAFE_NULL_CHECK(response = malloc(sizeof(Message)));
     switch(request->type)
     {
@@ -309,16 +320,15 @@ Message *parseRequest(Message *request, ConnState state)
         {
             FileContainer *fc;
             void *buf = NULL;
-            uint64_t amount, n, size, i;
+            int amount, i, n;
+            uint64_t size;
 
-            n = *(uint64_t *) request->content;
-            printf("Reading %ld files..\n", n);
-            if((amount = conn_readNFiles(n, &fc, state)) > 0)
+            n = *(int *) request->content;
+            amount = conn_readNFiles(n, &fc, state);
+
+            if(amount > 0)
             {
-                puts("Ehm");
-                printf("Actually %ld files..\n", amount);
                 serializeContainerArray(fc, amount, &size, &buf);
-                puts("Howdy!");
                 messageInit(size, buf, "Read done!", MT_INFO, MS_OK, response);
                 for(i = 0; i < amount; i++)
                 {
@@ -369,4 +379,19 @@ int _sendMessageWrapper(void *args)
 {
     struct _messageArgs tmp = *((struct _messageArgs *) args);
     return sendMessage(tmp.fd, tmp.m);
+}
+
+
+
+void logConnection(ConnState state)
+{
+    printf("%s\t>Connection\n", state.uuid);
+}
+void logRequest(Message *request, ConnState state)
+{
+    printf("%s\t>Request\n", state.uuid);
+}
+void logResponse(Message *response, ConnState state)
+{
+    printf("%s\t>Response\n", state.uuid);
 }

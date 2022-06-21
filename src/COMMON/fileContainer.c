@@ -118,33 +118,25 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
         puts("Called serialize with 0 size array, shouldn't happen, bye!");
         return -1;
     }
-    puts("Calling serializeContArray...");
     for(i = 0; i < n; i++)
     {
         finalSize += sizeof(uint64_t) + calcSize(fc[i]);
     }
 
     *size = finalSize;
-
-    printf("Calculated size:%ld\n", finalSize);
     SAFE_NULL_CHECK(*buf = malloc(finalSize));
-    puts("Malloced...");
+
 
     for(i = 0; i < n; i++)
     {
-        printf("Serializing container:%d, CurLoc:%ld\n", i, curLoc);
-
         SAFE_ERROR_CHECK(serializeContainer(fc[i], &curBuf, &curSize))
-    
-        puts("Serialized, now memcpyng");
+
         memcpy(*buf + curLoc, (void *)&curSize, sizeof(uint64_t));
         curLoc += sizeof(uint64_t);
-        puts("Second memcpy");
         memcpy(*buf + curLoc, curBuf, curSize);
         curLoc += curSize;
         free(curBuf);
     }
-    puts("Ok, done serializing..");
     return 0;
 }
 

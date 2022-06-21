@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -g -Wall -pthread -I ../include
+CFLAGS = -g -Wall -pthread  -I ../include
+LIBRARY = -luuid
 client_objects = CLIENT/api.o CLIENT/client.o 
 common_objects = COMMON/atomicint.o COMMON/fileContainer.o COMMON/hashtable.o COMMON/helpers.o COMMON/list.o COMMON/message.o COMMON/murmur3.o COMMON/syncqueue.o COMMON/threadpool.o 
 server_objects = SERVER/files.o SERVER/filesystem.o SERVER/globals.o SERVER/server.o SERVER/connstate.o
@@ -11,7 +12,7 @@ objects =  $(client_objects) $(common_objects) $(server_objects) $(test_objects)
 all: $(objects)
 
 server: $(common_objects) $(server_objects)
-	$(CC) $(CFLAGS) $(common_objects) $(server_objects) -o ../out/server.out
+	$(CC) $(CFLAGS) $(common_objects) $(server_objects) -o ../out/server.out $(LIBRARY)
 
 client: $(client_objects) $(common_objects)
 	$(CC) $(CFLAGS) $(client_objects) $(common_objects) -o ../out/client.out

@@ -120,7 +120,7 @@ int readNFiles(int N, const char* dirname)
     FileContainer *fc;
     uint64_t amount, i;
 
-    SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, NULL, MT_FREADN, MS_REQ, &m));
+    SAFE_ERROR_CHECK(messageInit(sizeof(int) , &N, "please giv files", MT_FREADN, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
