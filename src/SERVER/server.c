@@ -15,7 +15,7 @@
 #include "SERVER/filesystem.h"
 #include "SERVER/globals.h"
 #include "SERVER/connstate.h"
-#include "SERVER/logging.h"
+#include "COMMON/logging.h"
 
 
 #define UNIX_PATH_MAX 108

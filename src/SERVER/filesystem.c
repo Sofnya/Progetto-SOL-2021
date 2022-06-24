@@ -60,7 +60,6 @@ void fsDestroy(FileSystem *fs)
 
     while(listSize(*fs->filesList) > 0)
     {
-        UNSAFE_NULL_CHECK(curFile = malloc(sizeof(File)));
         listPop((void **)&cur, fs->filesList);
         if(hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
         {
@@ -280,6 +279,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     void *curBuffer;
 
 
+
     pthread_mutex_lock(fs->filesListMtx);
 
 
@@ -290,15 +290,15 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     for(i = 0; i < amount; i++)
     {
         CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), pthread_mutex_unlock(fs->filesListMtx));
+
         curSize = getSize(cur, fs);
         CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, pthread_mutex_unlock(fs->filesListMtx));
 
-        CLEANUP_ERROR_CHECK(openFile(cur, 0, &curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});     
+        CLEANUP_ERROR_CHECK(openFile(cur, 0, &curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});
         CLEANUP_ERROR_CHECK(readFile(curFD, &curBuffer, curSize, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});
         CLEANUP_ERROR_CHECK(closeFile(curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer);});
 
-        containerInit(curSize, curBuffer, cur, buf[i]);
-        
+        containerInit(curSize, curBuffer, cur,  &((*buf)[i]));
         free(curBuffer);
     }
     pthread_mutex_unlock(fs->filesListMtx);

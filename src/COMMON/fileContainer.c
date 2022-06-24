@@ -22,7 +22,6 @@ int containerInit(uint64_t size, void *content, char *name, FileContainer *fc)
     memcpy(fc->content,content, size);
     SAFE_NULL_CHECK(fc->name = malloc(strlen(name) + 1));
     strcpy(fc->name, name);
-
     return 0;
 }
 

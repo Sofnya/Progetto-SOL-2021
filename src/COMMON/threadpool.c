@@ -7,7 +7,7 @@
 
 #include "COMMON/threadpool.h"
 #include "COMMON/macros.h"
-#include "SERVER/logging.h"
+#include "COMMON/logging.h"
 
 void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool)
 {

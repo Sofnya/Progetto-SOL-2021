@@ -1,44 +1,332 @@
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <stdlib.h>
-#include <errno.h>
+#include <getopt.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <dirent.h>
 
 
-#include "COMMON/message.h"
+#include "CLIENT/api.h"
+#include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
+
 
 #define UNIX_PATH_MAX 108
 #define SOCKNAME "fakeAddress"
 #define N 100
 
 
-int main()
+int writeNFiles(char *dir, int n, char *missDirName, int delay);
+
+int main(int argc, char *argv[])
 {
-    int sfd;
-    struct sockaddr_un sa;
-    Message *request;
+    int opt;
+    int n, delay=0;
+    char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
+    HashTable openFiles;
+    void *flag;
+    FILE *file;
 
-    for(int i = 0; i < 1000; i++){
-        if((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-        { perror("Something went wrong while creating socket"); }
+    hashTableInit(50, &openFiles);
 
-        strncpy(sa.sun_path, SOCKNAME, UNIX_PATH_MAX);
-        sa.sun_family = AF_UNIX;
 
-        while (connect(sfd,(struct sockaddr*)&sa, sizeof(sa)) == -1 ) {
-            if (errno == ENOENT)
-            sleep(1); /* sock non esiste */
-            else exit(EXIT_FAILURE); 
+    while((opt = getopt(argc, argv, "hf:w:W:D:r:R::d:t:l:u:c:p")) != -1)
+    {
+        switch(opt)
+        {
+            case('h'):
+            {
+                puts("Usage:");
+                exit(EXIT_SUCCESS);
+            }
+            case('f'):
+            {
+                struct timespec abstime;
+
+                if(sockname != NULL) 
+                {
+                    usleep(delay);
+                    closeConnection(sockname);
+                }
+                puts("Socket set");
+                sockname = optarg;
+                puts(optarg);
+
+
+                timespec_get(&abstime, TIME_UTC);
+                abstime.tv_sec += 10;
+
+                openConnection(sockname, 100, abstime);
+                break;
+            }
+            //TODO
+            case('w'):
+            {
+                puts("Writing dir");
+                puts(optarg);
+                n = 0;
+                if(strchr(optarg, ',') != NULL)
+                {
+                    tmp = strtok(optarg, ",");
+                    n = atoi(strtok(NULL, ","));
+
+                    if(strtok(NULL, ",") != NULL)
+                    {
+                        puts("Too many options after -w");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                else
+                {
+                    tmp = optarg;
+                }
+                printf("Dir:%s n=%d\n", tmp, n);
+                if(n == 0) n = INT32_MAX;
+
+                printf("Wrote %d files\n", writeNFiles(tmp, n, missDirName, delay));
+                break;
+            }
+            case('W'):
+            {
+                puts("Writing files");
+                tmp = strtok(optarg, ",");
+                do
+                {
+                    usleep(delay);
+                    if((openFile(tmp, O_CREATE | O_LOCK) == -1))
+                    {
+                        printf("Couldn't create file %s\n", tmp);
+                        continue;
+                    }
+                    usleep(delay);
+                    if(writeFile(tmp,missDirName) == -1)
+                    {
+                        printf("Couldn't write file %s\n", tmp);
+                    }
+
+                    usleep(delay);
+                    closeFile(tmp);
+                    
+                } while((tmp = strtok(NULL,",")) != NULL);
+                break;
+            }
+            case('D'):
+            {
+                puts("Miss Dir set");
+                missDirName = optarg;
+                puts(optarg);
+                break;
+            }
+            case('r'):
+            {
+                void *buf;
+                size_t size;
+                puts("Reading files");
+                tmp = strtok(optarg, ",");
+                do
+                {
+                    printf("Reading file %s\n", tmp);
+                    if(hashTableGet(tmp, &flag, openFiles) == -1)
+                    {
+                        usleep(delay);
+                        if(openFile(tmp, 0) == -1)
+                        {
+                            printf("Couldn't open file %s\n", tmp);
+                        }
+                    }
+                    usleep(delay);
+                    if(readFile(tmp, &buf, &size) == -1)
+                    {
+                        printf("Couldn't read file %s\n", tmp);
+                    }
+                    else
+                    {
+                        file = fopen(tmp, "w+");
+                        fwrite(buf, size, 1, file);
+                        fclose(file);
+                        free(buf);
+                    }
+                    if(hashTableGet(tmp, &flag, openFiles) == -1)
+                    {
+                        usleep(delay);
+                        if(closeFile(tmp) == -1)
+                        {
+                            printf("Couldn't close file %s\n", tmp);
+                        }
+                    }
+
+                } while((tmp = strtok(NULL,",")) != NULL);
+                break;
+            }
+
+            case('R'):
+            {
+                puts("Read N");
+                n = 0;
+                if(optarg != 0)
+                {
+                    n = atoi(optarg);
+                }
+                printf("Reading %d files\n", n);
+                usleep(delay);
+                readNFiles(n, readDirName);
+                break;
+            }
+            case('d'):
+            {
+                puts("readDir set");
+                puts(optarg);
+                readDirName = optarg;
+                break;
+            }
+            case('t'):
+            {
+                delay = atoi(optarg);
+                printf("delay set:%d", delay);
+                break;
+            }
+            case('l'):
+            {
+                puts("Locking files");
+                
+                tmp = strtok(optarg, ",");
+                do
+                {
+                    usleep(delay);
+                    if(lockFile(tmp) == -1)
+                    {
+                        printf("Couldn't lock file %s\n", tmp);
+                    }
+                    else
+                    {
+                        hashTablePut(tmp, NULL, openFiles);
+                    }
+                } while((tmp = strtok(NULL,",")) != NULL);
+                break;
+            }
+            case('u'):
+            {
+                puts("Unlocking files");
+                tmp = strtok(optarg, ",");
+                do
+                {
+                    usleep(delay);
+
+                    if(unlockFile(tmp) == -1)
+                    {
+                        printf("Couldn't unlock file %s\n", tmp);
+                    }
+                    else
+                    {
+                        hashTableRemove(tmp, NULL, openFiles);
+                    }
+                } while((tmp = strtok(NULL,",")) != NULL);
+                break;
+            }
+            case('c'):
+            {
+                puts("Removing files");
+                tmp = strtok(optarg, ",");
+                do
+                {
+                    if(hashTableGet(tmp, &flag, openFiles) == -1)
+                    {
+                        usleep(delay);
+                        lockFile(tmp);
+                    }
+                    usleep(delay);
+                    if(removeFile(tmp) == -1)
+                    {
+                        printf("Couldn't remove file %s\n", tmp);
+                    }
+                    if(hashTableGet(tmp, &flag, openFiles) == -1)
+                    {
+                        usleep(delay);
+                        unlockFile(tmp);
+                    }
+                } while((tmp = strtok(NULL,",")) != NULL);
+                puts(optarg);
+                break;
+            }
+            case('p'):
+            {
+                puts("Print activated");
+                break;
+            }
+            default:
+            {
+                puts("Unrecognized!");
+                break;
+            }
         }
-        UNSAFE_NULL_CHECK(request = malloc(sizeof(Message)));
-        messageInit(0, NULL, "Hallo!", 0, 0, request);
-        sendMessage(sfd, request);
-        messageDestroy(request);
-        free(request);
-        
-        close(sfd);
     }
-    exit(EXIT_SUCCESS);
+
+    hashTableDestroy(&openFiles);
+}
+
+
+
+/**
+ * @brief Visits the directory dirPath and all its subdirectories untill its written N files from within them.
+ * 
+ * @param dirPath the directory to visit recuriìsively.
+ * @param n the number of files to write.
+ * @param missDirName where to write files recieved back from the server.
+ * @return int the number of files actually written.
+ */
+int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
+{
+    int count = 0;
+    DIR *dir;
+    struct dirent *cur;
+    char *path;
+
+    printf("Visiting directory: %s with n=%d\n", dirPath, n);
+
+    dir = opendir(dirPath);
+    if(dir == NULL) return 0;
+
+    while(count < n)
+    {
+        cur = readdir(dir);
+        if(cur == NULL) break;
+
+        
+        if(cur->d_type == DT_DIR)
+        {
+            if(strcmp(cur->d_name, ".") != 0 && strcmp(cur->d_name, "..") != 0)
+            {
+                path = malloc(strlen(dirPath) + strlen(cur->d_name) + 100);
+                sprintf(path, "%s/%s", dirPath, cur->d_name);
+                count += writeNFiles(path, n - count, missDirName, delay);
+                free(path);
+            }
+        }
+        else if(cur->d_type == DT_REG)
+        {
+            path = malloc(strlen(dirPath) + strlen(cur->d_name) + 100);
+            sprintf(path, "%s/%s", dirPath, cur->d_name);
+
+            usleep(delay);
+            if((openFile(path, O_CREATE | O_LOCK) == -1))
+            {
+                printf("Couldn't create file %s\n", path);
+                free(path);
+                continue;
+            }
+            usleep(delay);
+            if(writeFile(path,missDirName) == -1)
+            {
+                printf("Couldn't write file %s\n", path);
+            }
+            else count++;
+            
+            usleep(delay);
+            closeFile(path);
+            free(path);
+        }
+    }
+    closedir(dir);
+    return count;
 }

@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "SERVER/logging.h"
+#include "COMMON/logging.h"
 #include "SERVER/globals.h"
 #include "COMMON/macros.h"
 
+#define LOG_FILE "log"
 
 int logger(char *msg)
 {

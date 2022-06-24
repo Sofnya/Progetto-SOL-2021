@@ -1,9 +1,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 
 
 #include "CLIENT/api.h"
@@ -16,6 +19,37 @@
 
 
 int sfd;
+
+
+void __recmkdir(char *path) {
+    char *sep = strrchr(path, '/');
+
+    if(sep != NULL) {
+        *sep = 0;
+        __recmkdir(path);
+        *sep = '/';
+    }
+    
+    if(path[strlen(path)] == '/'){
+        if(mkdir(path, 0777) && errno != EEXIST)
+            perror("error while creating dir"); 
+    }
+}
+
+
+void __mkdir(char *path)
+{
+    char *prev, *cur;
+    prev = strtok(path, "/");
+    while((cur = strtok(NULL, "/")) != NULL)
+    {
+        printf("Making dir:%s\n", prev);
+        if(mkdir(prev, 0777) && errno != EEXIST)
+            perror("error while creating dir");
+        prev[strlen(prev)] = '/';     
+    
+    }
+}
 
 
 int openConnection(const char* sockname, int msec, const struct timespec abstime)
@@ -120,6 +154,8 @@ int readNFiles(int N, const char* dirname)
     FileContainer *fc;
     uint64_t amount, i;
     char info[100];
+    char *path;
+    FILE *file;
 
     sprintf(info, "Requesting %d files", N);
 
@@ -139,13 +175,34 @@ int readNFiles(int N, const char* dirname)
     }
 
     fc = deserializeContainerArray(m.content, m.size, &amount);
+
+
+
     for(i = 0; i < amount; i++)
     {
-        printf("Received file.%ld : %s : %s\n", i, fc[i].name, (char *)fc[i].content);
+        if(dirname == NULL) continue;
+
+        path = malloc(strlen(fc[i].name) + 10 + strlen(dirname));
+        sprintf(path, "%s/%s", dirname, fc[i].name);
+
+        __mkdir(path);
+
+        if((file = fopen(path, "w+")) != NULL)
+        {
+            fwrite(fc[i].content, 1, fc[i].size, file);
+            fclose(file);
+        }
+        else
+        {
+            perror("Couldn't open local path");
+        }
+
+        free(path);
         destroyContainer(&fc[i]);
     }
 
     free(fc);
+    messageDestroy(&m);
 
     return 0;
     }
