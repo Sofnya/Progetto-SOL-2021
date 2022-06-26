@@ -58,14 +58,18 @@ void fsDestroy(FileSystem *fs)
     char *cur;
     File *curFile;
 
+    puts("Destroying fileSystem, current state:\n");
+    printList(fs->filesList);
+    puts("\nHashTable:\n");
+    printHashTable(*fs->filesTable);
     while(listSize(*fs->filesList) > 0)
     {
         listPop((void **)&cur, fs->filesList);
         if(hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
         {
             fileDestroy(curFile);
+            free(curFile);
         }
-        free(curFile);
         free(cur);
     }
 
@@ -152,7 +156,7 @@ int openFile(const char* pathname, int flags, FileDescriptor **fd, FileSystem *f
 
     if(flags & O_LOCK) 
     {
-        lockFile(newFd, fs);
+        SAFE_ERROR_CHECK(lockFile(newFd, fs));
     }
     *fd = newFd;
 
@@ -312,6 +316,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
+    puts("Locking file...");
     if(fd->flags & FI_LOCK)
     {
         errno = EINVAL;
@@ -323,6 +328,7 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
     SAFE_ERROR_CHECK(fileLock(file));
     fd->flags |= FI_LOCK;
 
+    puts("Succesfully locked file");
     return 0;
 }
 
@@ -362,7 +368,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 
 
 
-    if(!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
+    if(!((fd->flags & FI_LOCK)))
     {
         errno = EINVAL;
         return -1;
@@ -379,12 +385,29 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
         if(!strcmp(name,fd->name))
         {
 
-            listRemove(i, (void **)&name, fs->filesList);
+            if(listRemove(i, (void **)&name, fs->filesList) == -1)
+            {
+                perror("Error on listRemove");
+            }
 
             free(name);
             break;
         }
         i++;
+    }
+    if(errno == EOF)
+    {
+        printf("%d:%p->|%s|\n", i, name, name);
+        if(!strcmp(name,fd->name))
+        {
+
+            if(listRemove(i, (void **)&name, fs->filesList) == -1)
+            {
+                perror("Error on listRemove");
+            }
+
+            free(name);
+        }
     }
     PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
@@ -421,4 +444,17 @@ uint64_t getSize(const char* pathname, FileSystem *fs)
 
     errno = 0;
     return getFileSize(file);
+}
+
+
+
+
+uint64_t getCurSize(FileSystem *fs)
+{
+    return atomicGet(fs->curSize);
+}
+
+uint64_t getCurN(FileSystem *fs)
+{
+    return atomicGet(fs->curN);
 }

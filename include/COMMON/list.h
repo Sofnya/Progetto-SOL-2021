@@ -26,5 +26,6 @@ int listSize(List list);
 
 int listScan(void **el, void **saveptr, List *list);
 
+void printList(List *list);
 
 #endif

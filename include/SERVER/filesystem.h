@@ -58,5 +58,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs);
 
 uint64_t getSize(const char* pathname, FileSystem *fs);
 
+uint64_t getCurSize(FileSystem *fs);
+uint64_t getCurN(FileSystem *fs);
 
 #endif

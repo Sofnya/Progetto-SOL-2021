@@ -194,6 +194,11 @@ int main(int argc, char *argv[])
                 do
                 {
                     usleep(delay);
+                    if(openFile(tmp, 0) == -1)
+                    {
+                        printf("Couldn't open file %s\n", tmp);
+                    }
+                    usleep(delay);
                     if(lockFile(tmp) == -1)
                     {
                         printf("Couldn't lock file %s\n", tmp);
@@ -233,18 +238,14 @@ int main(int argc, char *argv[])
                     if(hashTableGet(tmp, &flag, openFiles) == -1)
                     {
                         usleep(delay);
-                        lockFile(tmp);
+                        openFile(tmp, O_LOCK);
                     }
                     usleep(delay);
                     if(removeFile(tmp) == -1)
                     {
                         printf("Couldn't remove file %s\n", tmp);
                     }
-                    if(hashTableGet(tmp, &flag, openFiles) == -1)
-                    {
-                        usleep(delay);
-                        unlockFile(tmp);
-                    }
+
                 } while((tmp = strtok(NULL,",")) != NULL);
                 puts(optarg);
                 break;
@@ -292,7 +293,7 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
         cur = readdir(dir);
         if(cur == NULL) break;
 
-        
+
         if(cur->d_type == DT_DIR)
         {
             if(strcmp(cur->d_name, ".") != 0 && strcmp(cur->d_name, "..") != 0)

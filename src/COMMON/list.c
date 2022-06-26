@@ -390,3 +390,21 @@ int listScan(void **el, void **saveptr, List *list)
     }
 }
 
+
+/**
+ * @brief For debugging, prints a list's contents.
+ * 
+ * @param list the list to be printed.
+ */
+void printList(List *list)
+{
+    void *saveptr = NULL;
+    void *el;
+
+    while(listScan(&el, &saveptr, list) != -1)
+    {
+        printf("|%p|", el);
+        printf("->");
+    }
+    printf("|%p|", el);
+}

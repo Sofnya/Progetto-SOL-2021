@@ -26,9 +26,12 @@ void connStateDestroy(ConnState *state)
     char *key;
     FileDescriptor *fd;
 
-
     while(hashTablePop(&key, (void **)&fd, *(state->fds)) != -1)
     {
+        if(fd->flags & FI_LOCK)
+        {
+            unlockFile(fd, state->fs);
+        }
         free(key);
         free(fd);
     }
@@ -132,6 +135,10 @@ int conn_removeFile(const char *path, ConnState state)
     }
 
     tmp = removeFile(fd, state.fs);
+    if(tmp == -1)
+    {
+        unlockFile(fd, state.fs);
+    }
     free(fd);
     return tmp;
 }

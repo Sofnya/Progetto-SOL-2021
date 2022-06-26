@@ -1,6 +1,7 @@
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #ifdef DEBUG
 #include <assert.h>
@@ -390,3 +391,41 @@ uint64_t _getLoc(const char *key, uint64_t size)
 
      return hash[0] % size;
 }
+
+
+/**
+ * @brief For debugging, prints the rows contents.
+ * 
+ * @param row the row to be printed.
+ */
+void _printRow(struct _row row)
+{
+    void *saveptr = NULL;
+    struct _entry *el;
+
+    while(listScan((void **)&el, &saveptr, row.row) != -1)
+    {
+        printf("|%s : %p|", el->key, el->value);
+        printf("->");
+    }
+    if(errno == EOF)
+    {
+        printf("|%s : %p|\n", el->key, el->value);
+    }
+}
+
+
+/**
+ * @brief For debugging, prints the hashtable's contents.
+ * 
+ * @param table the table to be printed.
+ */
+void printHashTable(HashTable table)
+{
+    int i;
+    for(i = 0; i < table.size; i++)
+    {
+        _printRow(table._table[i]);
+    }
+}
+

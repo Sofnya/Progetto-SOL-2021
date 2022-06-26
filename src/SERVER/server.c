@@ -146,6 +146,8 @@ void handleConnection(void *fdc)
         response = parseRequest(request, state);
         logResponse(response, state);
         
+        printf("CurN:%ld CurSize:%ld\n", getCurN(&fs), getCurSize(&fs));
+        
         args.m = response;
         err = timeoutCall(_sendMessageWrapper, (void *)&args ,maxWait);
         if(err == -1 || err == ETIMEDOUT)
