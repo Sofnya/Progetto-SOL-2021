@@ -7,7 +7,6 @@
 #include <pthread.h>
 #include <string.h>
 
-
 #include "COMMON/message.h"
 #include "COMMON/threadpool.h"
 #include "COMMON/syncqueue.h"
@@ -19,11 +18,7 @@
 #include "SERVER/filesystem.h"
 #include "SERVER/files.h"
 
-
 #define SOCK_NAME "testSocket"
-
-
-
 
 void test(void *par)
 {
@@ -34,14 +29,13 @@ void test(void *par)
     return;
 }
 
-
 int threadpoolTest()
 {
     ThreadPool pool;
     int i;
     threadpoolInit(1, 300, &pool);
 
-    for(i = 0; i < 1000; i++)
+    for (i = 0; i < 1000; i++)
     {
         int *j = malloc(sizeof(int));
         *j = 10;
@@ -55,9 +49,6 @@ int threadpoolTest()
     return 0;
 }
 
-
-
-
 int syncqueueTest()
 {
     SyncQueue *queue;
@@ -65,18 +56,18 @@ int syncqueueTest()
 
     UNSAFE_NULL_CHECK(queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(queue);
-    for(i = 0; i < 100000; i++)
+    for (i = 0; i < 100000; i++)
     {
         syncqueuePush(&i, queue);
-        assert(*(int*)syncqueuePop(queue) == i);
+        assert(*(int *)syncqueuePop(queue) == i);
     }
-    for(i = 0; i < 999; i++)
+    for (i = 0; i < 999; i++)
     {
         syncqueuePush(&j, queue);
     }
-    for(i = 0; i < 900; i++)
+    for (i = 0; i < 900; i++)
     {
-        assert(j == *(int*)syncqueuePop(queue));
+        assert(j == *(int *)syncqueuePop(queue));
     }
 
     syncqueueDestroy(queue);
@@ -84,54 +75,55 @@ int syncqueueTest()
     return 0;
 }
 
-
-
-
 void cleanup(void);
 void *senderClient(void *a);
 
 int sfd;
 int messageTest()
-{   
+{
     pthread_t pid;
     struct sockaddr_un sa;
     Message *m;
-    int fdc, reuse=1;
+    int fdc, reuse = 1;
     atexit(&cleanup);
 
     sfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if(sfd == -1) {perror("Error when creating socket"); exit(0);}
+    if (sfd == -1)
+    {
+        perror("Error when creating socket");
+        exit(0);
+    }
 
-    if(setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1)
+    if (setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) == -1)
     {
         perror("Error when setting sock opt");
         exit(0);
     }
 
-
     sa.sun_family = AF_UNIX;
     strcpy(sa.sun_path, SOCK_NAME);
     bind(sfd, (struct sockaddr *)&sa, sizeof(sa));
-
 
     pthread_create(&pid, NULL, &senderClient, NULL);
 
     listen(sfd, SOMAXCONN);
     fdc = accept(sfd, NULL, NULL);
 
-    if(fdc == -1) {perror("Error"); return -1;}
-
+    if (fdc == -1)
+    {
+        perror("Error");
+        return -1;
+    }
 
     m = malloc(sizeof(Message));
     assert(!receiveMessage(fdc, m));
 
-    //puts(m->info);
+    // puts(m->info);
     assert(!memcmp("abcdefghij", m->content, 10));
     assert(!strcmp("This is your info", m->info));
     assert(m->size == 10);
     assert(m->status == 2);
     assert(m->type == 1);
-
 
     pthread_join(pid, NULL);
     messageDestroy(m);
@@ -148,7 +140,8 @@ void *senderClient(void *a)
     int fdc;
 
     fdc = socket(AF_UNIX, SOCK_STREAM, 0);
-    if(fdc == -1){
+    if (fdc == -1)
+    {
         perror("Client error on creating socket");
         return 0;
     }
@@ -156,7 +149,7 @@ void *senderClient(void *a)
     strcpy(sa.sun_path, SOCK_NAME);
     sa.sun_family = AF_UNIX;
 
-    if(connect(fdc, (struct sockaddr *)&sa, sizeof(sa)) == -1)
+    if (connect(fdc, (struct sockaddr *)&sa, sizeof(sa)) == -1)
     {
         perror("Client error on connecting");
         return 0;
@@ -179,24 +172,21 @@ void cleanup(void)
     unlink(SOCK_NAME);
 }
 
-
-
-
 int listTest()
 {
     List list, list2;
     void *saveptr;
     int i;
     int *j;
-    
+
     listInit(&list);
     listInit(&list2);
 
-    for(i=0; i <= 9999; i++)
+    for (i = 0; i <= 9999; i++)
     {
         UNSAFE_NULL_CHECK(j = malloc(sizeof(int)));
         *j = i;
-        //printf("Inserting %d...\n", *j);
+        // printf("Inserting %d...\n", *j);
         ERROR_CHECK(listAppend((void *)j, &list));
     }
 
@@ -204,34 +194,29 @@ int listTest()
     *j = 1337;
     listPut(0, (void *)j, &list);
 
-    for(i = 0; i <= 9999; i++)
+    for (i = 0; i <= 9999; i++)
     {
         ERROR_CHECK(listGet(i + 1, (void **)&j, &list));
         assert(i == *j);
     }
 
-
     saveptr = NULL;
-    while(listScan((void **)&j, &saveptr, &list) != -1)
+    while (listScan((void **)&j, &saveptr, &list) != -1)
     {
         free(j);
     }
     free(j);
 
-
-
     listDestroy(&list);
 
-
-
-    for(i = 0; i <= 9999; i++)
+    for (i = 0; i <= 9999; i++)
     {
         UNSAFE_NULL_CHECK(j = malloc(sizeof(int)));
         *j = i;
         ERROR_CHECK(listPush(j, &list2));
     }
 
-    for(i = 9999; i >= 0; i--)
+    for (i = 9999; i >= 0; i--)
     {
         ERROR_CHECK(listPop((void **)&j, &list2));
         assert(*j == i);
@@ -242,21 +227,17 @@ int listTest()
     return 0;
 }
 
-
-
-
 int hashtableTest()
 {
     struct _row testRow;
 
     struct _entry entry1, entry2, entry3, entry4;
     entry1.key = "entry1";
-    entry1.value = (void*)1;
+    entry1.value = (void *)1;
     entry2.key = "entry2";
-    entry2.value = (void*)2;
+    entry2.value = (void *)2;
     entry3.key = "entry3";
-    entry3.value = (void*)3;
-
+    entry3.value = (void *)3;
 
     _rowInit(&testRow);
 
@@ -265,15 +246,14 @@ int hashtableTest()
     _rowPut(entry1, testRow);
     _rowPut(entry2, testRow);
     _rowPut(entry3, testRow);
-    
+
     assert(_rowGet("entry1", &entry4, testRow) == 0);
-    assert(entry4.value == (void*)1);
+    assert(entry4.value == (void *)1);
 
     _rowRemove("entry1", NULL, testRow);
     assert(_rowGet("entry1", &entry4, testRow) == -1);
-    
-    _rowDestroy(testRow);
 
+    _rowDestroy(testRow);
 
     HashTable table;
     int j;
@@ -282,20 +262,19 @@ int hashtableTest()
     hashTablePut("entry1", (void *)1, table);
     hashTablePut("entry2", (void *)2, table);
     hashTablePut("entry3", (void *)3, table);
-    
+
     hashTableGet("entry1", (void **)&j, table);
     assert(j == 1);
     hashTableGet("entry2", (void **)&j, table);
     assert(j == 2);
-    hashTableGet("entry3",(void **) &j, table);
+    hashTableGet("entry3", (void **)&j, table);
     assert(j == 3);
 
     hashTablePut("entry1", (void *)1231, table);
-    hashTableGet("entry1",(void **) &j, table);
+    hashTableGet("entry1", (void **)&j, table);
     assert(j == 1231);
     hashTableRemove("entry1", NULL, table);
     assert(hashTableGet("entry1", (void **)&j, table) == -1);
-
 
     hashTableGet("entry2", (void **)&j, table);
     assert(j == 2);
@@ -304,12 +283,8 @@ int hashtableTest()
 
     hashTableDestroy(&table);
 
-    
     return 0;
 }
-
-
-
 
 int filesystemTest()
 {
@@ -341,20 +316,15 @@ int filesystemTest()
     return 0;
 }
 
-
-
-
 int filesTest()
 {
     File *file1;
     char *alphabet = "abcdefghijklmnopqrstuvwxyz", *tmp;
     void *content;
 
-
     UNSAFE_NULL_CHECK(file1 = malloc(sizeof(File)));
     ERROR_CHECK(fileInit("file1", file1));
 
-    
     content = alphabet;
 
     ERROR_CHECK(fileLock(file1));
@@ -377,7 +347,6 @@ int filesTest()
 
     return 0;
 }
-
 
 int fileContainerTest()
 {
@@ -431,12 +400,11 @@ int fileContainerTest()
     destroyContainer(&result[1]);
     destroyContainer(&fc);
     destroyContainer(&fc2);
-    
+
     free(buf);
 
     return 0;
 }
-
 
 int main(int argc, char const *argv[])
 {

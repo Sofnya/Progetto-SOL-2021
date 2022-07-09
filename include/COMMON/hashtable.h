@@ -4,29 +4,26 @@
 #include <pthread.h>
 #include <stdint.h>
 
-
 #include "list.h"
 #include "murmur3.h"
 
-
-struct _row {
+struct _row
+{
     List *row;
     pthread_mutex_t *mtx;
 };
 
-struct _entry {
+struct _entry
+{
     char *key;
     void *value;
 };
 
-
-typedef struct _HashTable{
+typedef struct _HashTable
+{
     uint64_t size;
-    struct _row *_table;    
+    struct _row *_table;
 } HashTable;
-
-
-
 
 int _rowGet(const char *key, struct _entry *el, struct _row row);
 int _rowPut(struct _entry el, struct _row row);

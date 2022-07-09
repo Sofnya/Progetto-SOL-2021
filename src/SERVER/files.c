@@ -4,10 +4,9 @@
 
 #include "COMMON/macros.h"
 
-
 /**
  * @brief Initializes given file with the correct name.
- * 
+ *
  * @param name the pathname of the file
  * @param file the file to initialize
  * @return int 0 on success, -1 and sets errno otherwise
@@ -29,7 +28,7 @@ int fileInit(const char *name, File *file)
 
 /**
  * @brief Destroys given file, freeing it's memory.
- * 
+ *
  * @param file the file to be destroyed
  */
 void fileDestroy(File *file)
@@ -43,7 +42,7 @@ void fileDestroy(File *file)
 
 /**
  * @brief Writes the given content to the file.
- * 
+ *
  * @param content the content to be written.
  * @param size the size of content.
  * @param file the file to be modified.
@@ -61,7 +60,7 @@ int fileWrite(const void *content, uint64_t size, File *file)
 
 /**
  * @brief Appends the given content at the end of the file.
- * 
+ *
  * @param content the content to be written.
  * @param size the size of the new content.
  * @param file the file to be modified.
@@ -79,7 +78,7 @@ int fileAppend(const void *content, uint64_t size, File *file)
 
 /**
  * @brief will read up to bufsize bytes from the files contents inside of the given buf.
- * 
+ *
  * @param buf where the contents will be returned.
  * @param bufsize the size of buf.
  * @param file the file to be read.
@@ -89,40 +88,40 @@ int fileRead(void *buf, uint64_t bufsize, File *file)
 {
     uint64_t n;
 
-    if(bufsize < file->size) n = bufsize;
-    else n = file->size;
+    if (bufsize < file->size)
+        n = bufsize;
+    else
+        n = file->size;
 
     memcpy(buf, file->content, n);
 
     return 0;
 }
 
-
 /**
  * @brief Trys to lock the file, without blocking.
- * 
- * @param file 
- * @return int 0 if succesfull, -1 and sets errno on if file is already locked.
+ *
+ * @param file
+ * @return int 0 if succesfull, -1 and sets errno if file is already locked.
  */
 int fileTryLock(File *file)
 {
     int res;
 
     res = pthread_mutex_trylock(file->mtx);
-    if(res != 0) 
+    if (res != 0)
     {
         errno = res;
-        return -1;    
+        return -1;
     }
     return 0;
 }
 
-
 /**
  * @brief Locks the file.
- * 
- * @param file 
- * @return int 
+ *
+ * @param file
+ * @return int
  */
 int fileLock(File *file)
 {
@@ -130,12 +129,11 @@ int fileLock(File *file)
     return 0;
 }
 
-
 /**
  * @brief Unlocks the file.
- * 
- * @param file 
- * @return int 
+ *
+ * @param file
+ * @return int
  */
 int fileUnlock(File *file)
 {
@@ -143,12 +141,11 @@ int fileUnlock(File *file)
     return 0;
 }
 
-
 /**
  * @brief Get the File's size.
- * 
- * @param file 
- * @return uint64_t 
+ *
+ * @param file
+ * @return uint64_t
  */
 uint64_t getFileSize(File *file)
 {
@@ -157,12 +154,11 @@ uint64_t getFileSize(File *file)
 
 /**
  * @brief Get the File's name.
- * 
- * @param file 
- * @return char* 
+ *
+ * @param file
+ * @return char*
  */
 const char *getFileName(File *file)
 {
     return file->name;
 }
-
