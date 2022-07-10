@@ -204,6 +204,7 @@ Message *parseRequest(Message *request, ConnState state)
                 if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
                 {
                     messageInit(size, buf, "Capacity miss on create file", MT_INFO, MS_OKCAP, response);
+                    free(buf);
                 }
                 else
                 {
@@ -286,6 +287,7 @@ Message *parseRequest(Message *request, ConnState state)
             if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
             {
                 messageInit(size, buf, "Capacity miss on write", MT_INFO, MS_OKCAP, response);
+                free(buf);
             }
             else
             {
@@ -294,6 +296,7 @@ Message *parseRequest(Message *request, ConnState state)
             }
             if (fcsSize != -1)
             {
+                puts("Freeing container...");
                 for (i = 0; i < fcsSize; i++)
                 {
                     destroyContainer(fcs + i);
@@ -324,6 +327,7 @@ Message *parseRequest(Message *request, ConnState state)
             if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
             {
                 messageInit(size, buf, "Capacity miss on append", MT_INFO, MS_OKCAP, response);
+                free(buf);
             }
             else
             {

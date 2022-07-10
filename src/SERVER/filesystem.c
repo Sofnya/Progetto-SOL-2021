@@ -32,8 +32,10 @@ int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
 
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
 
+    PTHREAD_CHECK(pthread_mutexattr_init(&attr));
     PTHREAD_CHECK(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
     PTHREAD_CHECK(pthread_mutex_init(fs->filesListMtx, &attr));
+    PTHREAD_CHECK(pthread_mutexattr_destroy(&attr));
     SAFE_ERROR_CHECK(listInit(fs->filesList));
 
     if (maxN > 0)
@@ -185,7 +187,7 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
+int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
 {
     File *file;
 
@@ -215,7 +217,7 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
+int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
     uint64_t oldSize;
@@ -249,7 +251,7 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
+int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
 
@@ -484,11 +486,10 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
     FileDescriptor *curFd;
     List tmpFiles;
     void *tmpBuf;
-    size_t tmpSize;
+    uint64_t tmpSize;
     const char *target;
     int n = 0, i = 0;
 
-    printf("Capacity miss, freeing %ld space\n", size);
     PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
 
     listInit(&tmpFiles);
@@ -500,18 +501,14 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
 
     while (toFree > 0)
     {
-        printf("toFree: %ld\n", toFree);
         CLEANUP_ERROR_CHECK(missPolicy(&curFd, fs), { pthread_mutex_unlock(fs->filesListMtx); });
 
         target = curFd->name;
 
-        printf("Found target %s\n", target);
         tmpSize = getSize(target, fs);
-        puts("GotSize");
 
         CLEANUP_CHECK(tmpBuf = malloc(tmpSize), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
         CLEANUP_ERROR_CHECK(readFile(curFd, &tmpBuf, tmpSize, fs), { pthread_mutex_unlock(fs->filesListMtx); });
-        puts("Read done");
         CLEANUP_CHECK(curFile = malloc(sizeof(FileContainer)), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
         CLEANUP_ERROR_CHECK(containerInit(tmpSize, tmpBuf, target, curFile), { pthread_mutex_unlock(fs->filesListMtx); });
 
@@ -519,12 +516,9 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
 
         CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { pthread_mutex_unlock(fs->filesListMtx); });
 
-        puts("Container created");
         CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { pthread_mutex_unlock(fs->filesListMtx); });
-        puts("file removed");
         free(curFd);
 
-        puts("Target removed");
         toFree -= tmpSize;
 
         n++;
@@ -533,13 +527,17 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
     PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * tmpFiles.size));
+
+    printList(&tmpFiles);
+
     for (i = 0; i < n; i++)
     {
-        listPop((void **)(buf + i), &tmpFiles);
+        listPop((void **)(&curFile), &tmpFiles);
+        (*buf)[i] = *curFile;
+        free(curFile);
     }
 
     listDestroy(&tmpFiles);
 
-    printf("Space freed, returning %d containers\n", n);
     return n;
 }

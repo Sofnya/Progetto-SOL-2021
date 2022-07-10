@@ -40,6 +40,7 @@ void connStateDestroy(ConnState *state)
 int conn_openFile(const char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
+    int i;
 
     if (openFile(path, flags, &fd, state.fs) == -1)
     {
@@ -54,11 +55,21 @@ int conn_openFile(const char *path, int flags, FileContainer **fcs, int *fcsSize
             perror("Error on freeSpace");
             return -1;
         }
+        for (i = 0; i < *fcsSize; i++)
+        {
+            if (hashTableRemove(fcs[i]->name, (void **)&fd, *state.fds) != -1)
+            {
+                free(fd);
+            }
+        }
 
         if (openFile(path, flags, &fd, state.fs) == -1)
         {
             perror("Double error on open after capacity miss.. BAD");
         }
+
+        hashTablePut(fd->name, fd, *state.fds);
+
         errno = EOVERFLOW;
         return -1;
     }
@@ -85,7 +96,7 @@ int conn_closeFile(const char *path, ConnState state)
     return closeFile(fd, state.fs);
 }
 
-int conn_readFile(const char *path, void **buf, size_t size, ConnState state)
+int conn_readFile(const char *path, void **buf, uint64_t size, ConnState state)
 {
     FileDescriptor *fd;
 
@@ -98,9 +109,10 @@ int conn_readFile(const char *path, void **buf, size_t size, ConnState state)
     return readFile(fd, buf, size, state.fs);
 }
 
-int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
+    int i;
 
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {
@@ -121,6 +133,14 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
             return -1;
         }
 
+        for (i = 0; i < *fcsSize; i++)
+        {
+            if (hashTableRemove((*fcs)[i].name, (void **)&fd, *state.fds) != -1)
+            {
+                free(fd);
+            }
+        }
+
         if (writeFile(fd, buf, size, state.fs) == -1)
         {
             perror("Double error on write after capacity miss.. BAD");
@@ -131,9 +151,10 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
     return 0;
 }
 
-int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
+    int i;
 
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {
@@ -153,6 +174,14 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
         {
             perror("Couldn't free space for capacity miss...");
             return -1;
+        }
+
+        for (i = 0; i < *fcsSize; i++)
+        {
+            if (hashTableRemove(fcs[i]->name, (void **)&fd, *state.fds) != -1)
+            {
+                free(fd);
+            }
         }
 
         if (appendToFile(fd, buf, size, state.fs) == -1)

@@ -17,25 +17,16 @@ int missPolicy(FileDescriptor **fd, FileSystem *fs)
     int i;
     char *target;
 
-    puts("Capacity miss...");
-
     for (i = 0; i < fs->filesList->size; i++)
     {
-        printf("Iteration %d\n", i);
         SAFE_ERROR_CHECK(listGet(i, (void **)&target, fs->filesList));
-        puts("Get done");
         SAFE_ERROR_CHECK(openFile(target, 0, fd, fs));
-        puts("File opened");
         if (tryLockFile(*fd, fs) == 0)
         {
-            printf("Target found: %s, returning\n", target);
             return 0;
         }
-        puts("Couldn't lock file, continuing");
         SAFE_ERROR_CHECK(closeFile(*fd, fs));
     }
-
-    puts("No target found, returning");
 
     errno = ENOENT;
     return -1;
