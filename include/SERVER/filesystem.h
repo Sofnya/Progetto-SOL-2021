@@ -26,6 +26,7 @@ typedef struct _filesystem
     HashTable *filesTable;
     AtomicInt *curSize, *curN;
     uint64_t maxSize, maxN;
+    int isCompressed;
 } FileSystem;
 
 typedef struct _fileDescriptor
@@ -35,10 +36,10 @@ typedef struct _fileDescriptor
     int flags;
 } FileDescriptor;
 
-int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs);
+int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
-int openFile(const char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
+int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
 int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs);

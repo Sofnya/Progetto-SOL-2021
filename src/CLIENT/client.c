@@ -19,7 +19,8 @@ int writeNFiles(char *dir, int n, char *missDirName, int delay);
 int main(int argc, char *argv[])
 {
     int opt;
-    int n, delay = 0;
+    int n;
+    long delay = 0;
     char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
     HashTable openFiles;
     void *flag;
@@ -191,8 +192,9 @@ int main(int argc, char *argv[])
         }
         case ('t'):
         {
-            delay = atoi(optarg);
-            printf("delay set:%d", delay);
+            delay = atol(optarg);
+            printf("delay set:%ldns\n", delay);
+            delay *= 1000;
             break;
         }
         case ('l'):

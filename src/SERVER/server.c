@@ -42,7 +42,7 @@ void cleanup(void);
 int _receiveMessageWrapper(void *args);
 int _sendMessageWrapper(void *args);
 
-void signalHandler(const int signum)
+void signalHandler(int signum)
 {
     logger("Exiting");
     exit(EXIT_FAILURE);
@@ -57,13 +57,13 @@ int main()
     signal(SIGTERM, &signalHandler);
     signal(SIGQUIT, &signalHandler);
     signal(SIGINT, &signalHandler);
-    sigaction(SIGPIPE, &(struct sigaction){SIG_IGN}, NULL);
+    sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
 
     atexit(&cleanup);
 
     load_config("config");
 
-    fsInit(MAX_FILES, MAX_MEMORY, &fs);
+    fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
@@ -508,12 +508,12 @@ void logRequest(Message *request, ConnState state)
         }
         case (MT_FWRITE):
         {
-            sprintf(parsed, "%s >Request:WRITE >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >Request:WRITE >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FAPPEND):
         {
-            sprintf(parsed, "%s >Request:APPEND >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >Request:APPEND >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FREM):
@@ -555,7 +555,7 @@ void logResponse(Message *response, ConnState state)
     }
     else
     {
-        sprintf(parsed, "%s >Response:%s", state.uuid, response->info);
+        sprintf(parsed, "%s >Response:%s >Size:%ld", state.uuid, response->info, response->size);
     }
     logger(parsed);
 }

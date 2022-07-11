@@ -294,7 +294,7 @@ int filesystemTest()
 
     UNSAFE_NULL_CHECK(fs = malloc(sizeof(FileSystem)));
 
-    ERROR_CHECK(fsInit(100, 2048, fs));
+    ERROR_CHECK(fsInit(100, 2048, 1, fs));
 
     ERROR_CHECK(openFile("file1", O_CREATE, &fd, fs));
     ERROR_CHECK(lockFile(fd, fs));
@@ -332,7 +332,11 @@ int filesTest()
     ERROR_CHECK(fileUnlock(file1));
     ERROR_CHECK(fileAppend(content, 5, file1));
 
+    ERROR_CHECK(fileCompress(file1));
+
     assert(!strcmp(getFileName(file1), "file1"));
+
+    ERROR_CHECK(fileDecompress(file1));
     assert(getFileSize(file1) == 10);
 
     tmp = malloc(11);

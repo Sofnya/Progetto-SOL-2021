@@ -37,7 +37,7 @@ void connStateDestroy(ConnState *state)
     free(state->fds);
 }
 
-int conn_openFile(const char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
     int i;
@@ -68,7 +68,7 @@ int conn_openFile(const char *path, int flags, FileContainer **fcs, int *fcsSize
             perror("Double error on open after capacity miss.. BAD");
         }
 
-        hashTablePut(fd->name, fd, *state.fds);
+        hashTablePut((char *)fd->name, fd, *state.fds);
 
         errno = EOVERFLOW;
         return -1;
@@ -80,7 +80,7 @@ int conn_openFile(const char *path, int flags, FileContainer **fcs, int *fcsSize
         return -1;
     }
 
-    return hashTablePut(fd->name, fd, *state.fds);
+    return hashTablePut((char *)fd->name, fd, *state.fds);
 }
 
 int conn_closeFile(const char *path, ConnState state)

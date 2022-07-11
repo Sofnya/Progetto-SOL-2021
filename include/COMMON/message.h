@@ -1,9 +1,7 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
-
 #include <stdint.h>
-
 
 #define MT_INFO 0
 #define MT_FOPEN 1
@@ -17,8 +15,6 @@
 #define MT_FUNLOCK 9
 #define MT_FREADN 10
 
-
-
 #define MS_REQ 0
 #define MS_OK 200
 #define MS_OKCAP 201
@@ -26,21 +22,18 @@
 #define MS_ERR 401
 #define MS_INTERR 402
 
-
-typedef struct _message {
+typedef struct _message
+{
     uint64_t size;
     void *content;
     char *info;
     int type, status;
 } Message;
 
-
-int messageInit(uint64_t size, const void *content, const char *info, int type, int status, Message *m);
+int messageInit(uint64_t size, void *content, const char *info, int type, int status, Message *m);
 void messageDestroy(Message *m);
-
 
 int sendMessage(int fd, Message *m);
 int receiveMessage(int fd, Message *m);
-
 
 #endif

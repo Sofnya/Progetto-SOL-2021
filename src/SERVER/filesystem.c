@@ -15,7 +15,7 @@
  * @param fs
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
+int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
 {
     pthread_mutexattr_t attr;
     fs->maxN = maxN;
@@ -46,6 +46,8 @@ int fsInit(uint64_t maxN, uint64_t maxSize, FileSystem *fs)
     {
         SAFE_ERROR_CHECK(hashTableInit(4096, fs->filesTable));
     }
+
+    fs->isCompressed = isCompressed;
 
     return 0;
 }
@@ -97,7 +99,7 @@ void fsDestroy(FileSystem *fs)
  * @param fs
  * @return int
  */
-int openFile(const char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
+int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
     File *file;
     char *nameCopy;
@@ -131,11 +133,16 @@ int openFile(const char *pathname, int flags, FileDescriptor **fd, FileSystem *f
 
         ERROR_CHECK(fileInit(pathname, file));
 
+        if (fs->isCompressed)
+        {
+            fileCompress(file);
+        }
         ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable));
 
         ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList));
 
         atomicInc(1, fs->curN);
+        atomicInc(getFileTrueSize(file), fs->curSize);
 
         PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
@@ -205,6 +212,13 @@ int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
         return -1;
     }
 
+    if (file->isCompressed)
+    {
+        if (fileDecompress(file) != 0)
+        {
+            return -1;
+        }
+    }
     return fileRead(*buf, size, file);
 }
 
@@ -220,7 +234,7 @@ int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
 int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
-    uint64_t oldSize;
+    uint64_t oldSize, newSize;
 
     if (!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
@@ -234,10 +248,12 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
     }
     SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
-    oldSize = getFileSize(file);
+    oldSize = getFileTrueSize(file);
     SAFE_ERROR_CHECK(fileWrite(buf, size, file));
+    newSize = getFileTrueSize(file);
 
-    atomicInc(size - oldSize, fs->curSize);
+    printf("Wrote, oldSize:%ld newSize:%ld\n", oldSize, newSize);
+    atomicInc(newSize - oldSize, fs->curSize);
 
     return 0;
 }
@@ -254,6 +270,7 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
+    uint64_t oldSize, newSize;
 
     if (!((fd->flags & FI_APPEND) && (fd->flags & FI_LOCK)))
     {
@@ -268,9 +285,10 @@ int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 
     SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
 
+    oldSize = getFileTrueSize(file);
     SAFE_ERROR_CHECK(fileAppend(buf, size, file));
-
-    atomicInc(size, fs->curSize);
+    newSize = getFileTrueSize(file);
+    atomicInc(newSize - oldSize, fs->curSize);
 
     return 0;
 }

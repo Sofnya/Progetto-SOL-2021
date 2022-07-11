@@ -13,7 +13,7 @@
  * @param fc a pointer to the container to be initialized.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int containerInit(uint64_t size, void *content, char *name, FileContainer *fc)
+int containerInit(uint64_t size, void *content, const char *name, FileContainer *fc)
 {
     fc->size = size;
     SAFE_NULL_CHECK(fc->content = malloc(size));
