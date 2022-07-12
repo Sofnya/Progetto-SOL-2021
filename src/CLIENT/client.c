@@ -59,9 +59,7 @@ int main(int argc, char *argv[])
                 usleep(delay);
                 closeConnection(sockname);
             }
-            puts("Socket set");
             sockname = optarg;
-            puts(optarg);
 
             timespec_get(&abstime, TIME_UTC);
             abstime.tv_sec += 10;
@@ -69,11 +67,8 @@ int main(int argc, char *argv[])
             openConnection(sockname, 100, abstime);
             break;
         }
-        // TODO
         case ('w'):
         {
-            puts("Writing dir");
-            puts(optarg);
             n = 0;
             if (strchr(optarg, ',') != NULL)
             {
@@ -90,7 +85,6 @@ int main(int argc, char *argv[])
             {
                 tmp = optarg;
             }
-            printf("Dir:%s n=%d\n", tmp, n);
             if (n == 0)
                 n = INT32_MAX;
 
@@ -99,18 +93,17 @@ int main(int argc, char *argv[])
         }
         case ('W'):
         {
-            puts("Writing files");
             tmp = strtok(optarg, ",");
             do
             {
                 usleep(delay);
-                if ((create_file(tmp, O_CREATE | O_LOCK, missDirName) == -1))
+                if ((create_file(tmp, O_CREATE | O_LOCK, missDirName) == -1) && verbose)
                 {
                     printf("Couldn't create file %s\n", tmp);
                     continue;
                 }
                 usleep(delay);
-                if (writeFile(tmp, missDirName) == -1)
+                if (writeFile(tmp, missDirName) == -1 && verbose)
                 {
                     printf("Couldn't write file %s\n", tmp);
                 }
@@ -123,30 +116,31 @@ int main(int argc, char *argv[])
         }
         case ('D'):
         {
-            puts("Miss Dir set");
             missDirName = optarg;
-            puts(optarg);
+
+            if (verbose)
+            {
+                printf("MissDir set to %s\n", missDirName);
+            }
             break;
         }
         case ('r'):
         {
             void *buf;
             size_t size;
-            puts("Reading files");
             tmp = strtok(optarg, ",");
             do
             {
-                printf("Reading file %s\n", tmp);
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {
                     usleep(delay);
-                    if (openFile(tmp, 0) == -1)
+                    if (openFile(tmp, 0) == -1 && verbose)
                     {
                         printf("Couldn't open file %s\n", tmp);
                     }
                 }
                 usleep(delay);
-                if (readFile(tmp, &buf, &size) == -1)
+                if (readFile(tmp, &buf, &size) == -1 && verbose)
                 {
                     printf("Couldn't read file %s\n", tmp);
                 }
@@ -160,7 +154,7 @@ int main(int argc, char *argv[])
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {
                     usleep(delay);
-                    if (closeFile(tmp) == -1)
+                    if (closeFile(tmp) == -1 && verbose)
                     {
                         printf("Couldn't close file %s\n", tmp);
                     }
@@ -172,45 +166,51 @@ int main(int argc, char *argv[])
 
         case ('R'):
         {
-            puts("Read N");
             n = 0;
             if (optarg != NULL)
             {
                 n = atoi(optarg);
             }
-            printf("Reading %d files\n", n);
+            if (verbose)
+            {
+                printf("Reading %d files\n", n);
+            }
             usleep(delay);
             readNFiles(n, readDirName);
             break;
         }
         case ('d'):
         {
-            puts("readDir set");
-            puts(optarg);
             readDirName = optarg;
+            if (verbose)
+            {
+                printf("ReadDir set to %s\n", readDirName);
+            }
             break;
         }
         case ('t'):
         {
             delay = atol(optarg);
-            printf("delay set:%ldns\n", delay);
+            if (verbose)
+            {
+                printf("delay set:%ldms\n", delay);
+            }
             delay *= 1000;
             break;
         }
         case ('l'):
         {
-            puts("Locking files");
 
             tmp = strtok(optarg, ",");
             do
             {
                 usleep(delay);
-                if (openFile(tmp, 0) == -1)
+                if (openFile(tmp, 0) == -1 && verbose)
                 {
                     printf("Couldn't open file %s\n", tmp);
                 }
                 usleep(delay);
-                if (lockFile(tmp) == -1)
+                if (lockFile(tmp) == -1 && verbose)
                 {
                     printf("Couldn't lock file %s\n", tmp);
                 }
@@ -223,18 +223,20 @@ int main(int argc, char *argv[])
         }
         case ('u'):
         {
-            puts("Unlocking files");
             tmp = strtok(optarg, ",");
             do
             {
                 usleep(delay);
 
-                if (unlockFile(tmp) == -1)
+                if (unlockFile(tmp) == -1 && verbose)
                 {
                     printf("Couldn't unlock file %s\n", tmp);
                 }
                 else
                 {
+                    usleep(delay);
+                    closeFile(tmp);
+
                     hashTableRemove(tmp, NULL, openFiles);
                 }
             } while ((tmp = strtok(NULL, ",")) != NULL);
@@ -242,7 +244,6 @@ int main(int argc, char *argv[])
         }
         case ('c'):
         {
-            puts("Removing files");
             tmp = strtok(optarg, ",");
             do
             {
@@ -250,11 +251,19 @@ int main(int argc, char *argv[])
                 {
                     usleep(delay);
                     openFile(tmp, O_LOCK);
+                    if (verbose)
+                    {
+                        printf("Opened file %s for removal.\n", tmp);
+                    }
                 }
                 usleep(delay);
-                if (removeFile(tmp) == -1)
+                if (removeFile(tmp) == -1 && verbose)
                 {
                     printf("Couldn't remove file %s\n", tmp);
+                }
+                else if (verbose)
+                {
+                    printf("Removed file %s\n", tmp);
                 }
 
             } while ((tmp = strtok(NULL, ",")) != NULL);
@@ -263,7 +272,8 @@ int main(int argc, char *argv[])
         }
         case ('p'):
         {
-            puts("Print activated");
+            puts("Verbose print activated");
+            verbose = 1;
             break;
         }
         default:
@@ -292,7 +302,10 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
     struct dirent *cur;
     char *path;
 
-    printf("Visiting directory: %s with n=%d\n", dirPath, n);
+    if (verbose)
+    {
+        printf("Visiting directory: %s with n=%d\n", dirPath, n);
+    }
 
     dir = opendir(dirPath);
     if (dir == NULL)
@@ -322,12 +335,15 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
             usleep(delay);
             if ((create_file(path, O_CREATE | O_LOCK, missDirName) == -1))
             {
-                printf("Couldn't create file %s\n", path);
+                if (verbose)
+                {
+                    printf("Couldn't create file %s\n", path);
+                }
                 free(path);
                 continue;
             }
             usleep(delay);
-            if (writeFile(path, missDirName) == -1)
+            if (writeFile(path, missDirName) == -1 && verbose)
             {
                 printf("Couldn't write file %s\n", path);
             }

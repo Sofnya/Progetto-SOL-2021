@@ -23,6 +23,7 @@ void connStateDestroy(ConnState *state)
     char *key;
     FileDescriptor *fd;
 
+    puts(">>>>>DESTROYING CONNSTATE!!!");
     while (hashTablePop(&key, (void **)&fd, *(state->fds)) != -1)
     {
         if (fd->flags & FI_LOCK)
@@ -39,8 +40,7 @@ void connStateDestroy(ConnState *state)
 
 int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
 {
-    FileDescriptor *fd;
-    int i;
+    FileDescriptor *fd, *tmp;
 
     if (openFile(path, flags, &fd, state.fs) == -1)
     {
@@ -55,14 +55,6 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
             perror("Error on freeSpace");
             return -1;
         }
-        for (i = 0; i < *fcsSize; i++)
-        {
-            if (hashTableRemove(fcs[i]->name, (void **)&fd, *state.fds) != -1)
-            {
-                free(fd);
-            }
-        }
-
         if (openFile(path, flags, &fd, state.fs) == -1)
         {
             perror("Double error on open after capacity miss.. BAD");
@@ -73,7 +65,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         errno = EOVERFLOW;
         return -1;
     }
-    if (hashTableGet(path, (void **)&fd, *state.fds) != -1)
+    if (hashTableGet(path, (void **)&tmp, *state.fds) != -1)
     {
         free(fd);
         errno = EINVAL;
@@ -112,7 +104,12 @@ int conn_readFile(const char *path, void **buf, uint64_t size, ConnState state)
 int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
-    int i;
+
+    if (size > state.fs->maxSize)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {
@@ -133,14 +130,6 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
             return -1;
         }
 
-        for (i = 0; i < *fcsSize; i++)
-        {
-            if (hashTableRemove((*fcs)[i].name, (void **)&fd, *state.fds) != -1)
-            {
-                free(fd);
-            }
-        }
-
         if (writeFile(fd, buf, size, state.fs) == -1)
         {
             perror("Double error on write after capacity miss.. BAD");
@@ -154,7 +143,12 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
 int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
-    int i;
+
+    if (size + getSize(path, state.fs) > state.fs->maxSize)
+    {
+        errno = EINVAL;
+        return -1;
+    }
 
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {
@@ -174,14 +168,6 @@ int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **
         {
             perror("Couldn't free space for capacity miss...");
             return -1;
-        }
-
-        for (i = 0; i < *fcsSize; i++)
-        {
-            if (hashTableRemove(fcs[i]->name, (void **)&fd, *state.fds) != -1)
-            {
-                free(fd);
-            }
         }
 
         if (appendToFile(fd, buf, size, state.fs) == -1)

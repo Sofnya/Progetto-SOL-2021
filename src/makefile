@@ -28,9 +28,16 @@ apiTester: $(obj_dir)TESTS/apiTester.o $(obj_dir)CLIENT/api.o $(common_objects)
 stressTester: 
 	cp TESTS/stressTester.sh  ../out/stressTester.sh
 
+
+test1: server client
+	cp -r TESTS/test1 ../out/
+	cd ../out/test1; ./test1.sh
+
+
 $(objects): $(obj_dir)%.o: %.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
 	rm -f $(objects)
 	rm -f $(wildcard ../out/*.out)
+	rm -rf ../out/test1

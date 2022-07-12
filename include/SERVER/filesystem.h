@@ -55,6 +55,7 @@ int tryLockFile(FileDescriptor *fd, FileSystem *fs);
 int removeFile(FileDescriptor *fd, FileSystem *fs);
 
 uint64_t getSize(const char *pathname, FileSystem *fs);
+uint64_t getTrueSize(const char *pathname, FileSystem *fs);
 
 uint64_t getCurSize(FileSystem *fs);
 uint64_t getCurN(FileSystem *fs);

@@ -16,8 +16,15 @@
 int containerInit(uint64_t size, void *content, const char *name, FileContainer *fc)
 {
     fc->size = size;
-    SAFE_NULL_CHECK(fc->content = malloc(size));
-    memcpy(fc->content, content, size);
+    if (size != 0)
+    {
+        SAFE_NULL_CHECK(fc->content = malloc(size));
+        memcpy(fc->content, content, size);
+    }
+    else
+    {
+        fc->content = NULL;
+    }
     SAFE_NULL_CHECK(fc->name = malloc(strlen(name) + 1));
     strcpy(fc->name, name);
     return 0;
@@ -30,7 +37,10 @@ int containerInit(uint64_t size, void *content, const char *name, FileContainer 
  */
 void destroyContainer(FileContainer *fc)
 {
-    free(fc->content);
+    if (fc->size != 0)
+    {
+        free(fc->content);
+    }
     fc->content = NULL;
     free(fc->name);
     fc->name = NULL;

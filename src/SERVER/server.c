@@ -48,7 +48,7 @@ void signalHandler(int signum)
     exit(EXIT_FAILURE);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
     int fdc;
     int *curFd;
@@ -61,7 +61,14 @@ int main()
 
     atexit(&cleanup);
 
-    load_config("config");
+    if (argc == 2)
+    {
+        load_config(argv[1]);
+    }
+    else
+    {
+        load_config("config.txt");
+    }
 
     fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 

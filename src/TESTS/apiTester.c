@@ -20,17 +20,16 @@ int main(int argc, char const *argv[])
     openFile("testFile", O_CREATE);
     lockFile("testFile");
 
-
     writeFile("testFile", "./");
-    
+
     appendToFile("testFile", (void *)"aaaa", 5, "./");
 
     readFile("testFile", &buf, &size);
     readNFiles(10, "./");
     removeFile("testFile");
     closeConnection(SOCKNAME);
-    
-    sleep(5);
+
+    sleep(10);
     puts("all done!");
 
     return 0;

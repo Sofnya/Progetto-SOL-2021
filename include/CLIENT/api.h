@@ -7,6 +7,7 @@
 #define O_CREATE 00000002
 
 extern int sfd;
+extern int verbose;
 
 /**
  * Viene aperta una connessione AF_UNIX al socket file sockname. Se il server non accetta immediatamente la

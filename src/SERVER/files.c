@@ -56,11 +56,23 @@ void fileDestroy(File *file)
  */
 int fileWrite(const void *content, uint64_t size, File *file)
 {
-    UNSAFE_NULL_CHECK(file->content = realloc(file->content, size));
+    printf("File writing with size:%ld\n", size);
+
     file->size = size;
 
-    memcpy(file->content, content, size);
+    if (size != 0)
+    {
+        UNSAFE_NULL_CHECK(file->content = realloc(file->content, size));
 
+        memcpy(file->content, content, size);
+    }
+    else
+    {
+        free(file->content);
+        file->content = NULL;
+    }
+
+    puts("And memcpy done..");
     if (file->isCompressed)
     {
         file->isCompressed = 0;
@@ -178,8 +190,10 @@ int fileCompress(File *file)
     void *buf;
     char log[500];
 
+    puts("File compressing");
     if (file->isCompressed)
     {
+        puts("Already compressed smh");
         errno = EINVAL;
         return -1;
     }

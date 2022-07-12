@@ -16,6 +16,7 @@
 #define UNIX_PATH_MAX 108
 
 int sfd;
+int verbose = 0;
 
 void __mkdir(char *path)
 {
@@ -23,7 +24,11 @@ void __mkdir(char *path)
     prev = strtok(path, "/");
     while ((cur = strtok(NULL, "/")) != NULL)
     {
-        printf("Making dir:%s\n", prev);
+        if (verbose)
+        {
+            printf("Making dir:%s\n", prev);
+        }
+
         if (mkdir(prev, 0777) && errno != EEXIST)
             perror("error while creating dir");
         prev[strlen(prev)] = '/';
@@ -39,7 +44,11 @@ void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname)
     if (dirname == NULL)
         return;
 
-    printf("Writing %ld files to dir:%s\n", size, dirname);
+    if (verbose)
+    {
+        printf("Writing %ld files to dir:%s\n", size, dirname);
+    }
+
     for (i = 0; i < size; i++)
     {
         path = malloc(strlen(fc[i].name) + 10 + strlen(dirname));
@@ -51,7 +60,11 @@ void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname)
         {
             fwrite(fc[i].content, 1, fc[i].size, file);
             fclose(file);
-            printf("Wrote %s\n", path);
+
+            if (verbose)
+            {
+                printf("Wrote %s\n", path);
+            }
         }
         else
         {
@@ -68,6 +81,11 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
     struct sockaddr_un sa;
     struct timespec curTime;
 
+    if (verbose)
+    {
+        printf("Opening connection to %s\n", sockname);
+    }
+
     SAFE_ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
     strncpy(sa.sun_path, sockname, UNIX_PATH_MAX);
@@ -79,7 +97,10 @@ int openConnection(const char *sockname, int msec, const struct timespec abstime
     {
         if (connect(sfd, (struct sockaddr *)&sa, sizeof(struct sockaddr_un)) == 0)
         {
-            printf("Connection opened! %d\n", sfd);
+            if (verbose)
+            {
+                printf("Connection opened! %d\n", sfd);
+            }
             return 0;
         }
         usleep(msec * 1000);
@@ -96,14 +117,21 @@ int closeConnection(const char *sockname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Closing connection to %s\n", sockname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, "Goodbye", MT_DISCONNECT, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
     messageDestroy(&m);
 
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK || m.status == MS_OKCAP);
-    puts(m.info);
-
+    if (verbose)
+    {
+        puts(m.info);
+    }
     if (m.status == MS_OKCAP)
     {
     }
@@ -120,13 +148,20 @@ int openFile(const char *pathname, int flags)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Opening file %s\n", pathname);
+    }
     SAFE_ERROR_CHECK(messageInit(sizeof(int), &flags, pathname, MT_FOPEN, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     messageDestroy(&m);
 
     if (success)
@@ -139,6 +174,11 @@ int readFile(const char *pathname, void **buf, size_t *size)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Reading file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FREAD, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
@@ -146,7 +186,10 @@ int readFile(const char *pathname, void **buf, size_t *size)
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
 
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     if (success)
     {
         *size = m.size;
@@ -170,6 +213,11 @@ int readNFiles(int N, const char *dirname)
 
     sprintf(info, "Requesting %d files", N);
 
+    if (verbose)
+    {
+        puts(info);
+    }
+
     SAFE_ERROR_CHECK(messageInit(sizeof(int), &N, info, MT_FREADN, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
@@ -177,7 +225,10 @@ int readNFiles(int N, const char *dirname)
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
 
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
 
     if (!success)
     {
@@ -205,6 +256,11 @@ int writeFile(const char *pathname, const char *dirname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Writing file %s\n", pathname);
+    }
+
     SAFE_NULL_CHECK(fd = fopen(pathname, "r"));
     fseek(fd, 0, SEEK_END);
     size = ftell(fd);
@@ -224,7 +280,10 @@ int writeFile(const char *pathname, const char *dirname)
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
 
     success = (m.status == MS_OK || m.status == MS_OKCAP);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
 
     if ((m.status == MS_OKCAP) && (dirname != NULL))
     {
@@ -247,13 +306,21 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
     FileContainer *fc;
     uint64_t amount;
 
+    if (verbose)
+    {
+        printf("Appending to file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(size, buf, pathname, MT_FAPPEND, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
 
     success = (m.status == MS_OK || m.status == MS_OKCAP);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
 
     if ((m.status == MS_OKCAP) && (dirname != NULL))
     {
@@ -274,13 +341,21 @@ int lockFile(const char *pathname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Locking file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FLOCK, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     messageDestroy(&m);
 
     if (success)
@@ -293,13 +368,21 @@ int unlockFile(const char *pathname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Unlocking file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FUNLOCK, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     messageDestroy(&m);
 
     if (success)
@@ -312,13 +395,21 @@ int closeFile(const char *pathname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Closing file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FCLOSE, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     messageDestroy(&m);
 
     if (success)
@@ -331,13 +422,21 @@ int removeFile(const char *pathname)
     Message m;
     bool success;
 
+    if (verbose)
+    {
+        printf("Removing file %s\n", pathname);
+    }
+
     SAFE_ERROR_CHECK(messageInit(0, NULL, pathname, MT_FREM, MS_REQ, &m));
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
     messageDestroy(&m);
 
     if (success)
@@ -352,6 +451,11 @@ int create_file(const char *pathname, int flags, const char *dirname)
     FileContainer *fc;
     uint64_t amount;
 
+    if (verbose)
+    {
+        printf("Creating file %s\n", pathname);
+    }
+
     flags |= O_CREATE;
 
     SAFE_ERROR_CHECK(messageInit(sizeof(int), &flags, pathname, MT_FOPEN, MS_REQ, &m));
@@ -360,7 +464,10 @@ int create_file(const char *pathname, int flags, const char *dirname)
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
     success = (m.status == MS_OK || m.status == MS_OKCAP);
-    puts(m.info);
+    if (verbose)
+    {
+        puts(m.info);
+    }
 
     if ((m.status == MS_OKCAP) && (dirname != NULL))
     {
