@@ -11,6 +11,7 @@ extern uint64_t MAX_POOL_SIZE;
 extern uint64_t MAX_FILES;
 extern uint64_t MAX_MEMORY;
 extern int ENABLE_COMPRESSION;
+extern int VERBOSE_PRINT;
 
 void load_config(char *path);
 #endif

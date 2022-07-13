@@ -81,8 +81,7 @@ int _rowPut(struct _entry el, struct _row row)
 
     SAFE_NULL_CHECK(new = malloc(sizeof(struct _entry)));
     new->value = el.value;
-    SAFE_NULL_CHECK(new->key = malloc(strlen(el.key) + 1));
-    strcpy(new->key, el.key);
+    new->key = el.key;
 
     list = row.row;
     listPush(new, list);
@@ -141,7 +140,6 @@ int _rowRemove(const char *key, struct _entry *el, struct _row row)
         cur = curel;
         if (el != NULL)
             *el = *cur;
-        free(cur->key);
         free(cur);
     }
 
@@ -327,6 +325,8 @@ int hashTableRemove(const char *key, void **value, HashTable table)
     if (value != NULL)
         *value = entry.value;
 
+    free(entry.key);
+
     return 0;
 }
 
@@ -345,7 +345,8 @@ int hashTablePut(char *key, void *value, HashTable table)
 
     loc = _getLoc(key, table.size);
 
-    entry.key = key;
+    entry.key = malloc(strlen(key) + 1);
+    strcpy(entry.key, key);
     entry.value = value;
 
     return _rowPut(entry, table._table[loc]);

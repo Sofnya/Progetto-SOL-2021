@@ -6,7 +6,7 @@
 #include "SERVER/filesystem.h"
 #include "COMMON/macros.h"
 #include "SERVER/policy.h"
-#include "COMMON/logging.h"
+#include "SERVER/logging.h"
 
 /**
  * @brief Initializes the given FileSystem with max number of files maxN and maximum memory occupation maxSize.
@@ -63,10 +63,7 @@ void fsDestroy(FileSystem *fs)
     char *cur;
     File *curFile;
 
-    puts("Destroying fileSystem, current state:\n");
-    printList(fs->filesList);
-    puts("\nHashTable:\n");
-    printHashTable(*fs->filesTable);
+    logger("Destroying fileSystem", "STATUS");
     while (listSize(*fs->filesList) > 0)
     {
         listPop((void **)&cur, fs->filesList);
@@ -105,6 +102,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     File *file;
     char *nameCopy;
     FileDescriptor *newFd;
+    char log[500];
 
     if (pathname == NULL)
         puts("\n\n\n\n\n\n\n\n\nSomething very wrong!");
@@ -144,6 +142,9 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 
         atomicInc(1, fs->curN);
         atomicInc(getFileTrueSize(file), fs->curSize);
+
+        sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
+        logger(log, "SIZE");
 
         PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
 
@@ -229,7 +230,7 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
     uint64_t oldSize, newSize;
-    puts("Writing file..");
+    char log[500];
     if (!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
         errno = EINVAL;
@@ -241,14 +242,14 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
         return -1;
     }
     SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
-    puts("Get succesfull");
     oldSize = getFileTrueSize(file);
     SAFE_ERROR_CHECK(fileWrite(buf, size, file));
-    puts("Write succesfull");
     newSize = getFileTrueSize(file);
 
-    printf("Wrote, oldSize:%ld newSize:%ld\n", oldSize, newSize);
     atomicInc(newSize - oldSize, fs->curSize);
+
+    sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
+    logger(log, "SIZE");
 
     return 0;
 }
@@ -266,6 +267,7 @@ int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
 {
     File *file;
     uint64_t oldSize, newSize;
+    char log[500];
 
     if (!((fd->flags & FI_APPEND) && (fd->flags & FI_LOCK)))
     {
@@ -284,6 +286,9 @@ int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
     SAFE_ERROR_CHECK(fileAppend(buf, size, file));
     newSize = getFileTrueSize(file);
     atomicInc(newSize - oldSize, fs->curSize);
+
+    sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
+    logger(log, "SIZE");
 
     return 0;
 }
@@ -411,10 +416,8 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 
     while (listScan((void **)&name, &saveptr, fs->filesList) != -1)
     {
-        printf("%d:%p->|%s|\n", i, name, name);
         if (!strcmp(name, fd->name))
         {
-
             if (listRemove(i, (void **)&name, fs->filesList) == -1)
             {
                 perror("Error on listRemove");
@@ -427,7 +430,6 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     }
     if (errno == EOF)
     {
-        printf("%d:%p->|%s|\n", i, name, name);
         if (!strcmp(name, fd->name))
         {
 
@@ -526,9 +528,6 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
     char log[500];
     int n = 0, i = 0;
 
-    sprintf(log, ">Capacity miss >To free:%ld", size);
-    logger(log);
-
     PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
 
     listInit(&tmpFiles);
@@ -544,10 +543,10 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
     {
         if (missPolicy(&curFd, fs) == -1)
         {
+            perror("MissPolicy error!");
             break;
         }
 
-        printf("Still to free:%ld\n", toFree);
         target = curFd->name;
 
         tmpSize = getSize(target, fs);
@@ -555,17 +554,14 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
 
         CLEANUP_CHECK(tmpBuf = malloc(tmpSize), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
         CLEANUP_ERROR_CHECK(readFile(curFd, &tmpBuf, tmpSize, fs), { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); });
-        puts("File read.");
+
         CLEANUP_CHECK(curFile = malloc(sizeof(FileContainer)), NULL, { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); });
         CLEANUP_ERROR_CHECK(containerInit(tmpSize, tmpBuf, target, curFile), { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); free(curFile); });
-        puts("Container Initialized.");
         free(tmpBuf);
 
         CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { pthread_mutex_unlock(fs->filesListMtx); });
-        puts("push done???");
         CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { pthread_mutex_unlock(fs->filesListMtx); });
         free(curFd);
-        puts("File removed");
 
         toFree -= tmpTrueSize;
 
@@ -576,9 +572,6 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
 
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * tmpFiles.size));
 
-    printList(&tmpFiles);
-    puts("");
-
     for (i = 0; i < n; i++)
     {
         listPop((void **)(&curFile), &tmpFiles);
@@ -586,10 +579,15 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
         free(curFile);
     }
 
-    sprintf(log, ">Capacity miss >Removed:%d", n);
-    logger(log);
+    sprintf(log, ">To free:%ld >Removed:%d", size, n);
+    logger(log, "CAPMISS");
+
+    sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
+    logger(log, "SIZE");
 
     listDestroy(&tmpFiles);
 
+    if (n == 0)
+        n = -1;
     return n;
 }

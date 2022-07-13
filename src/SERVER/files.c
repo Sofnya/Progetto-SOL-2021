@@ -5,7 +5,7 @@
 #include <zlib.h>
 #include "SERVER/files.h"
 #include "COMMON/macros.h"
-#include "COMMON/logging.h"
+#include "SERVER/logging.h"
 
 /**
  * @brief Initializes given file with the correct name.
@@ -56,8 +56,6 @@ void fileDestroy(File *file)
  */
 int fileWrite(const void *content, uint64_t size, File *file)
 {
-    printf("File writing with size:%ld\n", size);
-
     file->size = size;
 
     if (size != 0)
@@ -72,7 +70,6 @@ int fileWrite(const void *content, uint64_t size, File *file)
         file->content = NULL;
     }
 
-    puts("And memcpy done..");
     if (file->isCompressed)
     {
         file->isCompressed = 0;
@@ -190,10 +187,8 @@ int fileCompress(File *file)
     void *buf;
     char log[500];
 
-    puts("File compressing");
     if (file->isCompressed)
     {
-        puts("Already compressed smh");
         errno = EINVAL;
         return -1;
     }
@@ -211,8 +206,8 @@ int fileCompress(File *file)
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->compressedSize));
     file->isCompressed = 1;
 
-    sprintf(log, "Compressed file %s from size:%ld to size:%ld", file->name, file->size, file->compressedSize);
-    logger(log);
+    sprintf(log, ">Name:%s >From size:%ld >To size:%ld", file->name, file->size, file->compressedSize);
+    logger(log, "COMPRESSED");
 
     return 0;
 }
@@ -226,7 +221,7 @@ int fileCompress(File *file)
 int fileDecompress(File *file)
 {
     void *buf;
-    char log[500];
+    char *log;
 
     if (!file->isCompressed)
     {
@@ -245,8 +240,10 @@ int fileDecompress(File *file)
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->size));
     file->isCompressed = 0;
 
-    sprintf(log, "Decompressed file %s from size:%ld to size:%ld", file->name, file->compressedSize, file->size);
-    logger(log);
+    SAFE_NULL_CHECK(log = malloc(strlen(file->name) + 500));
+    sprintf(log, ">Name:%s >From size:%ld >To size:%ld", file->name, file->compressedSize, file->size);
+    logger(log, "DECOMPRESSED");
+    free(log);
 
     file->compressedSize = 0;
 

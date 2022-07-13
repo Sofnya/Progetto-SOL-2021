@@ -8,13 +8,13 @@
 #include <signal.h>
 
 #include "COMMON/macros.h"
-#include "COMMON/threadpool.h"
+#include "SERVER/threadpool.h"
 #include "COMMON/message.h"
 #include "COMMON/helpers.h"
 #include "SERVER/filesystem.h"
 #include "SERVER/globals.h"
 #include "SERVER/connstate.h"
-#include "COMMON/logging.h"
+#include "SERVER/logging.h"
 
 #define UNIX_PATH_MAX 108
 #define N 100
@@ -44,7 +44,7 @@ int _sendMessageWrapper(void *args);
 
 void signalHandler(int signum)
 {
-    logger("Exiting");
+    logger("Exiting", "STATUS");
     exit(EXIT_FAILURE);
 }
 
@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
     signal(SIGTERM, &signalHandler);
     signal(SIGQUIT, &signalHandler);
     signal(SIGINT, &signalHandler);
+    signal(SIGHUP, &signalHandler);
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
 
     atexit(&cleanup);
@@ -149,8 +150,6 @@ void handleConnection(void *fdc)
         logRequest(request, state);
         response = parseRequest(request, state);
         logResponse(response, state);
-
-        printf("CurN:%ld CurSize:%ld\n", getCurN(&fs), getCurSize(&fs));
 
         args.m = response;
         err = timeoutCall(_sendMessageWrapper, (void *)&args, maxWait);
@@ -303,7 +302,6 @@ Message *parseRequest(Message *request, ConnState state)
             }
             if (fcsSize != -1)
             {
-                puts("Freeing container...");
                 for (i = 0; i < fcsSize; i++)
                 {
                     destroyContainer(fcs + i);
@@ -443,7 +441,7 @@ Message *parseRequest(Message *request, ConnState state)
 
 void cleanup(void)
 {
-    logger("Cleaning up!");
+    logger("Cleaning up!", "STATUS");
     close(sfd);
     unlink(SOCK_NAME);
     threadpoolCleanExit(&pool);
@@ -452,7 +450,7 @@ void cleanup(void)
 
     fsDestroy(&fs);
 
-    logger("Done cleaning up!");
+    logger("Done cleaning up!", "STATUS");
 }
 
 int _receiveMessageWrapper(void *args)
@@ -470,14 +468,14 @@ void logConnection(ConnState state)
 {
     char parsed[36 + 100];
     sprintf(parsed, "%s >Connected", state.uuid);
-    logger(parsed);
+    logger(parsed, "CONN_OPEN");
 }
 
 void logDisconnect(ConnState state)
 {
     char parsed[36 + 100];
     sprintf(parsed, "%s >Disconnected", state.uuid);
-    logger(parsed);
+    logger(parsed, "CONN_CLOSE");
 }
 
 void logRequest(Message *request, ConnState state)
@@ -486,7 +484,7 @@ void logRequest(Message *request, ConnState state)
     if (request->info == NULL)
     {
         parsed = malloc(500);
-        sprintf(parsed, "%s >Request:MALFORMED", state.uuid);
+        sprintf(parsed, "%s >MALFORMED", state.uuid);
     }
     else
     {
@@ -495,74 +493,78 @@ void logRequest(Message *request, ConnState state)
         {
         case (MT_INFO):
         {
-            sprintf(parsed, "%s >Request:INFO >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >INFO >%s", state.uuid, request->info);
             break;
         }
         case (MT_FOPEN):
         {
-            sprintf(parsed, "%s >Request:OPEN >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >OPEN >%s", state.uuid, request->info);
             break;
         }
         case (MT_FCLOSE):
         {
-            sprintf(parsed, "%s >Request:CLOSE >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >CLOSE >%s", state.uuid, request->info);
             break;
         }
         case (MT_FREAD):
         {
-            sprintf(parsed, "%s >Request:READ >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >READ >%s", state.uuid, request->info);
             break;
         }
         case (MT_FWRITE):
         {
-            sprintf(parsed, "%s >Request:WRITE >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, "%s >WRITE >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FAPPEND):
         {
-            sprintf(parsed, "%s >Request:APPEND >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, "%s >APPEND >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FREM):
         {
-            sprintf(parsed, "%s >Request:REMOVE >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >REMOVE >%s", state.uuid, request->info);
             break;
         }
         case (MT_DISCONNECT):
         {
-            sprintf(parsed, "%s >Request:DISCONNECT >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >DISCONNECT >%s", state.uuid, request->info);
             break;
         }
         case (MT_FLOCK):
         {
-            sprintf(parsed, "%s >Request:LOCK >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >LOCK >%s", state.uuid, request->info);
             break;
         }
         case (MT_FUNLOCK):
         {
-            sprintf(parsed, "%s >Request:UNLOCK >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >UNLOCK >%s", state.uuid, request->info);
             break;
         }
         case (MT_FREADN):
         {
-            sprintf(parsed, "%s >Request:READN >%s", state.uuid, request->info);
+            sprintf(parsed, "%s >READN >%s", state.uuid, request->info);
             break;
         }
         }
     }
-    logger(parsed);
+    logger(parsed, "REQUEST");
     free(parsed);
 }
+
 void logResponse(Message *response, ConnState state)
 {
-    char parsed[36 + 500];
+    char *parsed;
     if (response->info == NULL)
     {
-        sprintf(parsed, "%s >Response:MALFORMED", state.uuid);
+        parsed = malloc(500);
+        sprintf(parsed, "%s >MALFORMED", state.uuid);
     }
     else
     {
-        sprintf(parsed, "%s >Response:%s >Size:%ld", state.uuid, response->info, response->size);
+        parsed = malloc(500 + strlen(response->info));
+        sprintf(parsed, "%s >%s >Size:%ld", state.uuid, response->info, response->size);
     }
-    logger(parsed);
+    logger(parsed, "RESPONSE");
+    free(parsed);
 }

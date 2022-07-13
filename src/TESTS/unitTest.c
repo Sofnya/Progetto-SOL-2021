@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "COMMON/message.h"
-#include "COMMON/threadpool.h"
+#include "SERVER/threadpool.h"
 #include "COMMON/syncqueue.h"
 #include "COMMON/macros.h"
 #include "COMMON/list.h"

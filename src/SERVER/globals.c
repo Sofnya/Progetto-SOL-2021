@@ -6,12 +6,13 @@
 #include <stdlib.h>
 
 char SOCK_NAME[UNIX_PATH_MAX] = "default_address";
-char LOG_FILE[UNIX_PATH_MAX] = "logger";
+char LOG_FILE[UNIX_PATH_MAX] = "log";
 uint64_t CORE_POOL_SIZE = 8;
 uint64_t MAX_POOL_SIZE = UINT64_MAX;
 uint64_t MAX_FILES = 100;
 uint64_t MAX_MEMORY = 100 * 1024 * 1024;
 int ENABLE_COMPRESSION = 1;
+int VERBOSE_PRINT = 1;
 
 void load_config(char *path)
 {
@@ -136,6 +137,21 @@ void load_config(char *path)
                 printf("Invalid value %s on line %d, ignoring.\n", value, lineN);
             }
         }
+        else if (!strcmp(option, "VERBOSE_PRINT"))
+        {
+            if (!strncmp(value, "TRUE", 4))
+            {
+                VERBOSE_PRINT = 1;
+            }
+            else if (!strncmp(value, "FALSE", 5))
+            {
+                VERBOSE_PRINT = 0;
+            }
+            else
+            {
+                printf("Invalid value %s on line %d, ignoring.\n", value, lineN);
+            }
+        }
         else
         {
             printf("Unsupported option %s at line %d, ignoring.\n", option, lineN);
@@ -149,5 +165,5 @@ void load_config(char *path)
     free(line);
     fclose(configFile);
     puts("Succesfully loaded config:");
-    printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION);
+    printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\nVERBOSE_PRINT:%d\nLOG_FILE:%s\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, VERBOSE_PRINT, LOG_FILE);
 }

@@ -23,7 +23,6 @@ void connStateDestroy(ConnState *state)
     char *key;
     FileDescriptor *fd;
 
-    puts(">>>>>DESTROYING CONNSTATE!!!");
     while (hashTablePop(&key, (void **)&fd, *(state->fds)) != -1)
     {
         if (fd->flags & FI_LOCK)
@@ -41,8 +40,15 @@ void connStateDestroy(ConnState *state)
 int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd, *tmp;
+    int capMiss = 0;
 
-    if (openFile(path, flags, &fd, state.fs) == -1)
+    if (hashTableGet(path, (void **)&tmp, *state.fds) != -1)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (openFile(path, flags, &fd, state.fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -53,25 +59,18 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         if (*fcsSize == -1)
         {
             perror("Error on freeSpace");
+            free(fcs);
             return -1;
         }
-        if (openFile(path, flags, &fd, state.fs) == -1)
-        {
-            perror("Double error on open after capacity miss.. BAD");
-        }
+    }
 
+    if (capMiss)
+    {
         hashTablePut((char *)fd->name, fd, *state.fds);
 
         errno = EOVERFLOW;
         return -1;
     }
-    if (hashTableGet(path, (void **)&tmp, *state.fds) != -1)
-    {
-        free(fd);
-        errno = EINVAL;
-        return -1;
-    }
-
     return hashTablePut((char *)fd->name, fd, *state.fds);
 }
 
@@ -104,6 +103,7 @@ int conn_readFile(const char *path, void **buf, uint64_t size, ConnState state)
 int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
+    int capMiss = 0;
 
     if (size > state.fs->maxSize)
     {
@@ -117,7 +117,7 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
         return -1;
     }
 
-    if (writeFile(fd, buf, size, state.fs) == -1)
+    while (writeFile(fd, buf, size, state.fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -129,11 +129,10 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
             perror("Couldn't free space for capacity miss...");
             return -1;
         }
+    }
 
-        if (writeFile(fd, buf, size, state.fs) == -1)
-        {
-            perror("Double error on write after capacity miss.. BAD");
-        }
+    if (capMiss)
+    {
         errno = EOVERFLOW;
         return -1;
     }
@@ -143,6 +142,7 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
 int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
+    int capMiss = 0;
 
     if (size + getSize(path, state.fs) > state.fs->maxSize)
     {
@@ -156,12 +156,13 @@ int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **
         return -1;
     }
 
-    if (appendToFile(fd, buf, size, state.fs) == -1)
+    while (appendToFile(fd, buf, size, state.fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
             return -1;
         }
+        capMiss = 1;
 
         *fcsSize = freeSpace(size, fcs, state.fs);
         if (*fcsSize == -1)
@@ -169,14 +170,14 @@ int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **
             perror("Couldn't free space for capacity miss...");
             return -1;
         }
+    }
 
-        if (appendToFile(fd, buf, size, state.fs) == -1)
-        {
-            perror("Double error on append after capacity miss.. BAD");
-        }
+    if (capMiss)
+    {
         errno = EOVERFLOW;
         return -1;
     }
+
     return 0;
 }
 
