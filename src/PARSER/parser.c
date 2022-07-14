@@ -249,7 +249,14 @@ void printStats(Stats stats)
     printf("\nType of requests:\n");
     printf("Read:%lld Write:%lld Open:%lld Close:%lld Lock:%lld Unlock:%lld\n", stats.readN, stats.writeN, stats.openN, stats.closeN, stats.lockN, stats.unlockN);
     printf("Total size of Reads:%lld\tWrites:%lld\n", stats.readSize, stats.writeSize);
-    printf("Average size of Reads:%lld\tWrites:%lld\n", stats.readSize / stats.readN, stats.writeSize / stats.writeN);
+    if (stats.readN != 0)
+    {
+        printf("Average size of Reads:%lld\n", stats.readSize / stats.readN);
+    }
+    if (stats.writeN != 0)
+    {
+        printf("Average size of Writes:%lld\n", stats.writeSize / stats.writeN);
+    }
 
     printf("\nSize of server:\n");
     printf("Maximum size:%lld\n", stats.maxSize);

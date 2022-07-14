@@ -22,7 +22,6 @@ void connStateDestroy(ConnState *state)
 {
     char *key;
     FileDescriptor *fd;
-
     while (hashTablePop(&key, (void **)&fd, *(state->fds)) != -1)
     {
         if (fd->flags & FI_LOCK)

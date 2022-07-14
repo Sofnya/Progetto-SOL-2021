@@ -185,7 +185,7 @@ int fileUnlock(File *file)
 int fileCompress(File *file)
 {
     void *buf;
-    char log[500];
+    char *log;
 
     if (file->isCompressed)
     {
@@ -206,8 +206,11 @@ int fileCompress(File *file)
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->compressedSize));
     file->isCompressed = 1;
 
+    SAFE_NULL_CHECK(log = malloc(500 + strlen(file->name)));
     sprintf(log, ">From:%ld >To:%ld >Name:%s ", file->size, file->compressedSize, file->name);
     logger(log, "COMPRESSED");
+
+    free(log);
 
     return 0;
 }

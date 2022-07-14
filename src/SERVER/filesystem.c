@@ -7,6 +7,61 @@
 #include "COMMON/macros.h"
 #include "SERVER/policy.h"
 #include "SERVER/logging.h"
+#define DEBUG
+
+#define READLOCK readLock(fs->rwLock, __LINE__, __func__)
+#define WRITELOCK writeLock(fs->rwLock, __LINE__, __func__)
+#define UNLOCK unlock(fs->rwLock, __LINE__, __func__)
+#define LISTLOCK listLock(fs->filesListMtx, __LINE__, __func__)
+#define LISTUNLOCK listUnlock(fs->filesListMtx, __LINE__, __func__)
+
+int listLock(pthread_mutex_t *lock, int line, const char *func)
+{
+    int tmp, tmpErrno;
+    tmp = pthread_mutex_lock(lock);
+    tmpErrno = errno;
+#ifdef DEBUG
+    printf("Acquired LISTLOCK on line %d in %s\n", line, func);
+#endif
+    errno = tmpErrno;
+    return tmp;
+}
+int listUnlock(pthread_mutex_t *lock, int line, const char *func)
+{
+#ifdef DEBUG
+    printf("Releasing LISTLOCK on line %d in %s\n", line, func);
+#endif
+    return pthread_mutex_unlock(lock);
+}
+int readLock(pthread_rwlock_t *lock, int line, const char *func)
+{
+    int tmp, tmpErrno;
+    tmp = pthread_rwlock_rdlock(lock);
+    tmpErrno = errno;
+#ifdef DEBUG
+    printf("Acquired READLOCK on line %d in %s\n", line, func);
+#endif
+    errno = tmpErrno;
+    return tmp;
+}
+int writeLock(pthread_rwlock_t *lock, int line, const char *func)
+{
+    int tmp, tmpErrno;
+    tmp = pthread_rwlock_wrlock(lock);
+    tmpErrno = errno;
+#ifdef DEBUG
+    printf("Acquired WRITELOCK on line %d in %s\n", line, func);
+#endif
+    errno = tmpErrno;
+    return tmp;
+}
+int unlock(pthread_rwlock_t *lock, int line, const char *func)
+{
+#ifdef DEBUG
+    printf("Releasing LOCK on line %d in %s\n", line, func);
+#endif
+    return pthread_rwlock_unlock(lock);
+}
 
 /**
  * @brief Initializes the given FileSystem with max number of files maxN and maximum memory occupation maxSize.
@@ -19,6 +74,7 @@
 int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
 {
     pthread_mutexattr_t attr;
+    pthread_rwlockattr_t rwAttr;
     fs->maxN = maxN;
     fs->maxSize = maxSize;
 
@@ -30,13 +86,17 @@ int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
 
     SAFE_NULL_CHECK(fs->filesList = malloc(sizeof(List)));
     SAFE_NULL_CHECK(fs->filesListMtx = malloc(sizeof(pthread_mutex_t)));
+    SAFE_NULL_CHECK(fs->rwLock = malloc(sizeof(pthread_rwlock_t)));
 
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
 
     PTHREAD_CHECK(pthread_mutexattr_init(&attr));
     PTHREAD_CHECK(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
     PTHREAD_CHECK(pthread_mutex_init(fs->filesListMtx, &attr));
+    PTHREAD_CHECK(pthread_rwlockattr_init(&rwAttr));
+    PTHREAD_CHECK(pthread_rwlock_init(fs->rwLock, &rwAttr));
     PTHREAD_CHECK(pthread_mutexattr_destroy(&attr));
+
     SAFE_ERROR_CHECK(listInit(fs->filesList));
 
     if (maxN > 0)
@@ -78,12 +138,14 @@ void fsDestroy(FileSystem *fs)
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
     pthread_mutex_destroy(fs->filesListMtx);
+    pthread_rwlock_destroy(fs->rwLock);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
 
     free(fs->filesList);
     free(fs->filesTable);
     free(fs->filesListMtx);
+    free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
 }
@@ -109,32 +171,51 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 
     if (flags & O_CREATE)
     {
-        PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+        PTHREAD_CHECK(LISTLOCK);
+        PTHREAD_CHECK(WRITELOCK);
 
         if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == 0)
         {
-            PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
+            UNLOCK;
+            PTHREAD_CHECK(LISTUNLOCK);
             errno = EINVAL;
             return -1;
         }
 
         if (atomicGet(fs->curN) + 1 > fs->maxN)
         {
-            pthread_mutex_unlock(fs->filesListMtx);
+            UNLOCK;
+            LISTUNLOCK;
+
             errno = EOVERFLOW;
             return -1;
         }
 
-        CLEANUP_CHECK(file = malloc(sizeof(File)), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
-        CLEANUP_CHECK(nameCopy = malloc(strlen(pathname) + 1), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_CHECK(file = malloc(sizeof(File)), NULL, {
+            UNLOCK;
+            LISTUNLOCK;
+        });
+        CLEANUP_CHECK(nameCopy = malloc(strlen(pathname) + 1), NULL, {
+            UNLOCK;
+            LISTUNLOCK;
+        });
 
         strcpy(nameCopy, pathname);
 
-        CLEANUP_ERROR_CHECK(fileInit(pathname, fs->isCompressed, file), { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_ERROR_CHECK(fileInit(pathname, fs->isCompressed, file), {
+            UNLOCK;
+            LISTUNLOCK;
+        });
 
-        CLEANUP_ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable), { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable), {
+            UNLOCK;
+            LISTUNLOCK;
+        });
 
-        CLEANUP_ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList), { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList), {
+            UNLOCK;
+            LISTUNLOCK;
+        });
 
         atomicInc(1, fs->curN);
         atomicInc(getFileTrueSize(file), fs->curSize);
@@ -142,7 +223,8 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
         logger(log, "SIZE");
 
-        PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
+        PTHREAD_CHECK(UNLOCK);
+        PTHREAD_CHECK(LISTUNLOCK);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         newFd->name = file->name;
@@ -151,17 +233,20 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     }
     else
     {
+        PTHREAD_CHECK(READLOCK);
 
         if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
         {
+            UNLOCK;
             errno = EINVAL;
             return -1;
         }
 
-        SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
+        CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
         newFd->name = file->name;
         newFd->pid = getpid();
         newFd->flags = FI_READ | FI_APPEND;
+        PTHREAD_CHECK(UNLOCK);
     }
 
     if (flags & O_LOCK)
@@ -195,6 +280,7 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
 int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
 {
     File *file;
+    int success, tmpErr;
 
     if (!(fd->flags & FI_READ))
     {
@@ -202,15 +288,23 @@ int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+    PTHREAD_CHECK(READLOCK);
+
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
     if (getFileSize(file) > size)
     {
+        PTHREAD_CHECK(UNLOCK);
         errno = ENOBUFS;
         return -1;
     }
 
-    return fileRead(*buf, size, file);
+    success = fileRead(*buf, size, file);
+    tmpErr = errno;
+
+    PTHREAD_CHECK(UNLOCK);
+    errno = tmpErr;
+    return success;
 }
 
 /**
@@ -237,10 +331,13 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
         errno = EOVERFLOW;
         return -1;
     }
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+
+    PTHREAD_CHECK(WRITELOCK);
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
     oldSize = getFileTrueSize(file);
-    SAFE_ERROR_CHECK(fileWrite(buf, size, file));
+    CLEANUP_ERROR_CHECK(fileWrite(buf, size, file), { UNLOCK; });
     newSize = getFileTrueSize(file);
+    PTHREAD_CHECK(UNLOCK);
 
     atomicInc(newSize - oldSize, fs->curSize);
 
@@ -276,11 +373,14 @@ int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+    PTHREAD_CHECK(WRITELOCK);
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
 
     oldSize = getFileTrueSize(file);
-    SAFE_ERROR_CHECK(fileAppend(buf, size, file));
+    CLEANUP_ERROR_CHECK(fileAppend(buf, size, file), { UNLOCK; });
     newSize = getFileTrueSize(file);
+    PTHREAD_CHECK(UNLOCK);
+
     atomicInc(newSize - oldSize, fs->curSize);
 
     sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
@@ -302,32 +402,47 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 {
     FileDescriptor *curFD;
     char *cur = NULL;
-    int amount, i;
+    int amount, i = 0;
     uint64_t curSize;
     void *curBuffer;
 
-    pthread_mutex_lock(fs->filesListMtx);
+    PTHREAD_CHECK(LISTLOCK);
 
     amount = atomicGet(fs->curN);
     if (N > 0 && N < amount)
         amount = N;
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * amount));
 
-    for (i = 0; i < amount; i++)
+    while (i < amount)
     {
-        CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), pthread_mutex_unlock(fs->filesListMtx));
+        CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(buf); });
 
         curSize = getSize(cur, fs);
-        CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, pthread_mutex_unlock(fs->filesListMtx));
+        CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, { LISTUNLOCK; });
 
-        CLEANUP_ERROR_CHECK(openFile(cur, 0, &curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer); });
-        CLEANUP_ERROR_CHECK(readFile(curFD, &curBuffer, curSize, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer); });
-        CLEANUP_ERROR_CHECK(closeFile(curFD, fs), {pthread_mutex_unlock(fs->filesListMtx); free(curBuffer); });
+        if (openFile(cur, 0, &curFD, fs) == -1)
+        {
+            free(curBuffer);
+            continue;
+        }
+        if (readFile(curFD, &curBuffer, curSize, fs) == -1)
+        {
+            free(curBuffer);
+            free(curFD);
+            continue;
+        }
+        if (closeFile(curFD, fs) == -1)
+        {
+            free(curBuffer);
+            free(curFD);
+            continue;
+        }
 
-        containerInit(curSize, curBuffer, cur, &((*buf)[i]));
+        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur, &((*buf)[i])), {LISTUNLOCK;free(buf); });
         free(curBuffer);
+        i++;
     }
-    pthread_mutex_unlock(fs->filesListMtx);
+    PTHREAD_CHECK(LISTUNLOCK);
 
     return amount;
 }
@@ -335,18 +450,41 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
+    int tmp;
     if (fd->flags & FI_LOCK)
     {
         errno = EINVAL;
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+    while (1)
+    {
+        PTHREAD_CHECK(READLOCK);
 
-    SAFE_ERROR_CHECK(fileLock(file));
-    fd->flags |= FI_LOCK;
+        CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
-    return 0;
+        errno = 0;
+        if (fileTryLock(file) == 0 || errno != EBUSY)
+        {
+            tmp = errno;
+            PTHREAD_CHECK(UNLOCK);
+            break;
+        }
+
+        PTHREAD_CHECK(UNLOCK);
+        usleep(100);
+    }
+
+    if (tmp == 0)
+    {
+        fd->flags |= FI_LOCK;
+        return 0;
+    }
+    else
+    {
+        errno = tmp;
+        return -1;
+    }
 }
 
 int unlockFile(FileDescriptor *fd, FileSystem *fs)
@@ -358,9 +496,12 @@ int unlockFile(FileDescriptor *fd, FileSystem *fs)
         return -1;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+    PTHREAD_CHECK(READLOCK);
 
-    SAFE_ERROR_CHECK(fileUnlock(file));
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
+
+    CLEANUP_ERROR_CHECK(fileUnlock(file), UNLOCK);
+    PTHREAD_CHECK(UNLOCK);
     fd->flags &= ~FI_LOCK;
 
     return 0;
@@ -369,17 +510,25 @@ int unlockFile(FileDescriptor *fd, FileSystem *fs)
 int tryLockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
+    int tmpErrno;
     if (fd->flags & FI_LOCK)
     {
         return 0;
     }
 
-    SAFE_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable));
+    PTHREAD_CHECK(READLOCK);
+
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
     if (fileTryLock(file) == -1)
     {
+        tmpErrno = errno;
+        PTHREAD_CHECK(UNLOCK);
+        errno = tmpErrno;
         return -1;
     }
+
+    PTHREAD_CHECK(UNLOCK);
     fd->flags |= FI_LOCK;
 
     return 0;
@@ -405,7 +554,9 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
         return -1;
     }
 
-    PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+    PTHREAD_CHECK(LISTLOCK);
+    CLEANUP_PTHREAD_CHECK(WRITELOCK, LISTUNLOCK);
+
     i = 0;
 
     while (listScan((void **)&name, &saveptr, fs->filesList) != -1)
@@ -435,7 +586,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
             free(name);
         }
     }
-    PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
+    CLEANUP_PTHREAD_CHECK(LISTUNLOCK, UNLOCK);
 
     SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
 
@@ -445,6 +596,8 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     fileUnlock(file);
     fileDestroy(file);
     free(file);
+
+    PTHREAD_CHECK(UNLOCK);
 
     return 0;
 }
@@ -459,15 +612,32 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 uint64_t getSize(const char *pathname, FileSystem *fs)
 {
     File *file;
+    uint64_t size;
+    int tmp = 0;
+
+    if (READLOCK != 0)
+    {
+        return 0;
+    }
 
     if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
     {
+        UNLOCK;
         errno = EINVAL;
         return 0;
     }
 
     errno = 0;
-    return getFileSize(file);
+    size = getFileSize(file);
+    tmp = errno;
+
+    if (UNLOCK != 0)
+    {
+        return 0;
+    }
+
+    errno = tmp;
+    return size;
 }
 
 /**
@@ -482,9 +652,19 @@ uint64_t getTrueSize(const char *pathname, FileSystem *fs)
 {
     File *file;
 
+    if (READLOCK != 0)
+    {
+        return 0;
+    }
+
     if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
     {
         errno = EINVAL;
+        return 0;
+    }
+
+    if (UNLOCK != 0)
+    {
         return 0;
     }
 
@@ -522,13 +702,13 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
     char log[500];
     int n = 0, i = 0;
 
-    PTHREAD_CHECK(pthread_mutex_lock(fs->filesListMtx));
+    PTHREAD_CHECK(LISTLOCK);
 
     listInit(&tmpFiles);
     toFree = size - (fs->maxSize - atomicGet(fs->curSize));
     if (size > fs->maxSize)
     {
-        pthread_mutex_unlock(fs->filesListMtx);
+        LISTUNLOCK;
         errno = EINVAL;
         return -1;
     }
@@ -546,15 +726,15 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
         tmpSize = getSize(target, fs);
         tmpTrueSize = getTrueSize(target, fs);
 
-        CLEANUP_CHECK(tmpBuf = malloc(tmpSize), NULL, { pthread_mutex_unlock(fs->filesListMtx); });
-        CLEANUP_ERROR_CHECK(readFile(curFd, &tmpBuf, tmpSize, fs), { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); });
+        CLEANUP_CHECK(tmpBuf = malloc(tmpSize), NULL, { LISTUNLOCK; });
+        CLEANUP_ERROR_CHECK(readFile(curFd, &tmpBuf, tmpSize, fs), { LISTUNLOCK; free(tmpBuf); });
 
-        CLEANUP_CHECK(curFile = malloc(sizeof(FileContainer)), NULL, { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); });
-        CLEANUP_ERROR_CHECK(containerInit(tmpSize, tmpBuf, target, curFile), { pthread_mutex_unlock(fs->filesListMtx); free(tmpBuf); free(curFile); });
+        CLEANUP_CHECK(curFile = malloc(sizeof(FileContainer)), NULL, { LISTUNLOCK; free(tmpBuf); });
+        CLEANUP_ERROR_CHECK(containerInit(tmpSize, tmpBuf, target, curFile), { LISTUNLOCK; free(tmpBuf); free(curFile); });
         free(tmpBuf);
 
-        CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { pthread_mutex_unlock(fs->filesListMtx); });
-        CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { LISTUNLOCK; });
+        CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { LISTUNLOCK; });
         free(curFd);
 
         toFree -= tmpTrueSize;
@@ -562,8 +742,7 @@ int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
         n++;
     }
 
-    PTHREAD_CHECK(pthread_mutex_unlock(fs->filesListMtx));
-
+    PTHREAD_CHECK(LISTUNLOCK);
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * tmpFiles.size));
 
     for (i = 0; i < n; i++)

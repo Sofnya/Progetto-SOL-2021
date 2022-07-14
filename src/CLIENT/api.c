@@ -1,7 +1,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+
 #include <time.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -12,69 +11,12 @@
 #include "COMMON/message.h"
 #include "COMMON/macros.h"
 #include "COMMON/fileContainer.h"
+#include "CLIENT/clientHelpers.h"
 
 #define UNIX_PATH_MAX 108
 
 int sfd;
 int verbose = 0;
-
-void __mkdir(char *path)
-{
-    char *prev, *cur;
-    prev = strtok(path, "/");
-    while ((cur = strtok(NULL, "/")) != NULL)
-    {
-        if (verbose)
-        {
-            printf("Making dir:%s\n", prev);
-        }
-
-        if (mkdir(prev, 0777) && errno != EEXIST)
-            perror("error while creating dir");
-        prev[strlen(prev)] = '/';
-    }
-}
-
-void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname)
-{
-    int i;
-    char *path;
-    FILE *file;
-
-    if (dirname == NULL)
-        return;
-
-    if (verbose)
-    {
-        printf("Writing %ld files to dir:%s\n", size, dirname);
-    }
-
-    for (i = 0; i < size; i++)
-    {
-        path = malloc(strlen(fc[i].name) + 10 + strlen(dirname));
-        sprintf(path, "%s/%s", dirname, fc[i].name);
-
-        __mkdir(path);
-
-        if ((file = fopen(path, "w+")) != NULL)
-        {
-            fwrite(fc[i].content, 1, fc[i].size, file);
-            fclose(file);
-
-            if (verbose)
-            {
-                printf("Wrote %s\n", path);
-            }
-        }
-        else
-        {
-            perror("Couldn't open local path");
-        }
-
-        free(path);
-        destroyContainer(&fc[i]);
-    }
-}
 
 int openConnection(const char *sockname, int msec, const struct timespec abstime)
 {
@@ -262,8 +204,8 @@ int writeFile(const char *pathname, const char *dirname)
     }
 
     SAFE_NULL_CHECK(fd = fopen(pathname, "r"));
-    fseek(fd, 0, SEEK_END);
-    size = ftell(fd);
+    SAFE_ERROR_CHECK(fseek(fd, 0, SEEK_END));
+    SAFE_ERROR_CHECK(size = ftell(fd));
     rewind(fd);
 
     SAFE_NULL_CHECK(buffer = malloc(size));

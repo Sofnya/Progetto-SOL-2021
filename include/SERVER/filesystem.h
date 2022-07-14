@@ -27,6 +27,8 @@ typedef struct _filesystem
     AtomicInt *curSize, *curN;
     uint64_t maxSize, maxN;
     int isCompressed;
+
+    pthread_rwlock_t *rwLock;
 } FileSystem;
 
 typedef struct _fileDescriptor

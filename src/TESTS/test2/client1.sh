@@ -1,3 +1,3 @@
 #!/bin/bash
-../client.out  -t 200 -f test2Address -D miss -W  test2.txt -d read -r test2.txt
-../client.out -t 200 -f test2Address -c test2.txt
+../client.out  -t 200 -p -f test2Address -D miss -W  testFiles/huge/file1 -d read -r testFiles/huge/file1
+../client.out -t 200 -p -f test2Address -c testFiles/huge/file1

@@ -7,6 +7,7 @@
 #include <dirent.h>
 
 #include "CLIENT/api.h"
+#include "CLIENT/clientHelpers.h"
 #include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
 
@@ -24,7 +25,6 @@ int main(int argc, char *argv[])
     char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
     HashTable openFiles;
     void *flag;
-    FILE *file;
 
     hashTableInit(50, &openFiles);
 
@@ -146,10 +146,7 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    file = fopen(tmp, "w+");
-                    fwrite(buf, size, 1, file);
-                    fclose(file);
-                    free(buf);
+                    __writeBufToDir(buf, size, tmp, readDirName);
                 }
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {

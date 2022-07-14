@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -g -Wall -pthread  -I ../include 
 LIBRARY = -luuid -lz -L ../deps
 obj_dir = ../obj/
-client_objects = $(obj_dir)CLIENT/api.o $(obj_dir)CLIENT/client.o 
+client_objects = $(obj_dir)CLIENT/api.o $(obj_dir)CLIENT/client.o $(obj_dir)CLIENT/clientHelpers.o
 common_objects = $(obj_dir)COMMON/atomicint.o $(obj_dir)COMMON/fileContainer.o $(obj_dir)COMMON/hashtable.o $(obj_dir)COMMON/helpers.o $(obj_dir)COMMON/list.o $(obj_dir)COMMON/message.o $(obj_dir)COMMON/murmur3.o $(obj_dir)COMMON/syncqueue.o  
 server_objects = $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/server.o $(obj_dir)SERVER/connstate.o  $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/threadpool.o $(obj_dir)SERVER/logging.o
 test_objects = $(obj_dir)TESTS/unitTest.o $(obj_dir)TESTS/apiTester.o
@@ -36,17 +36,29 @@ parser: $(parser_objects) $(common_objects)
 
 test1: server client
 	cp -r TESTS/test1 ../out/
-	cp -r TESTS/testFiles ../out/test1/
+
+	cp TESTS/setupTestFiles.sh TESTS/createRandomFiles.sh ../out/test1
+	cd ../out/test1; ./setupTestFiles.sh
+	rm -f ../out/test1/setupTestFiles.sh ../out/test1/createRandomFiles.sh
+
 	cd ../out/test1; ./test1.sh
 
 test2: server client
 	cp -r TESTS/test2 ../out/
-	cp -r TESTS/testFiles ../out/test2/
+
+	cp TESTS/setupTestFiles.sh TESTS/createRandomFiles.sh ../out/test2
+	cd ../out/test2; ./setupTestFiles.sh
+	rm -f ../out/test2/setupTestFiles.sh ../out/test2/createRandomFiles.sh
+
 	cd ../out/test2; ./test2.sh
 
 test3: server client
 	cp -r TESTS/test3 ../out/
-	cp -r TESTS/testFiles ../out/test3/
+
+	cp TESTS/setupTestFiles.sh TESTS/createRandomFiles.sh ../out/test3
+	cd ../out/test3; ./setupTestFiles.sh
+	rm -f ../out/test3/setupTestFiles.sh ../out/test3/createRandomFiles.sh
+
 	cd ../out/test3; ./test3.sh
 
 
