@@ -12,7 +12,7 @@ uint64_t MAX_POOL_SIZE = UINT64_MAX;
 uint64_t MAX_FILES = 100;
 uint64_t MAX_MEMORY = 100 * 1024 * 1024;
 int ENABLE_COMPRESSION = 1;
-int VERBOSE_PRINT = 1;
+int VERBOSE_PRINT = 0;
 
 void load_config(char *path)
 {
@@ -34,6 +34,12 @@ void load_config(char *path)
         {
             if (line[len - 1] == '\n')
                 line[len - 1] = '\00';
+        }
+
+        // Ignoring comments
+        if (!strncmp(line, "//", 2))
+        {
+            continue;
         }
 
         option = strtok_r(line, "=", &saveptr);

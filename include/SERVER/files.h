@@ -14,7 +14,7 @@ typedef struct _file
     pthread_mutex_t *mtx;
 } File;
 
-int fileInit(const char *name, File *file);
+int fileInit(const char *name, int isCompressed, File *file);
 void fileDestroy(File *file);
 
 int fileWrite(const void *content, uint64_t size, File *file);

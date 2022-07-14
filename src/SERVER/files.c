@@ -14,7 +14,7 @@
  * @param file the file to initialize
  * @return int 0 on success, -1 and sets errno otherwise
  */
-int fileInit(const char *name, File *file)
+int fileInit(const char *name, int isCompressed, File *file)
 {
     size_t nameSize;
 
@@ -24,7 +24,7 @@ int fileInit(const char *name, File *file)
 
     file->size = 0;
     file->compressedSize = 0;
-    file->isCompressed = 0;
+    file->isCompressed = isCompressed;
     file->content = NULL;
     SAFE_NULL_CHECK(file->mtx = malloc(sizeof(pthread_mutex_t)));
     PTHREAD_CHECK(pthread_mutex_init(file->mtx, NULL));
@@ -206,7 +206,7 @@ int fileCompress(File *file)
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->compressedSize));
     file->isCompressed = 1;
 
-    sprintf(log, ">Name:%s >From size:%ld >To size:%ld", file->name, file->size, file->compressedSize);
+    sprintf(log, ">From:%ld >To:%ld >Name:%s ", file->size, file->compressedSize, file->name);
     logger(log, "COMPRESSED");
 
     return 0;
@@ -241,7 +241,7 @@ int fileDecompress(File *file)
     file->isCompressed = 0;
 
     SAFE_NULL_CHECK(log = malloc(strlen(file->name) + 500));
-    sprintf(log, ">Name:%s >From size:%ld >To size:%ld", file->name, file->compressedSize, file->size);
+    sprintf(log, ">From:%ld >To:%ld >Name:%s ", file->compressedSize, file->size, file->name);
     logger(log, "DECOMPRESSED");
     free(log);
 

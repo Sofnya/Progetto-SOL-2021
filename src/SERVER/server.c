@@ -71,6 +71,10 @@ int main(int argc, char *argv[])
         load_config("config.txt");
     }
 
+    remove(LOG_FILE);
+
+    logger("Starting", "STATUS");
+
     fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
@@ -186,7 +190,7 @@ Message *parseRequest(Message *request, ConnState state)
     {
     case (MT_INFO):
     {
-        messageInit(0, NULL, "Hello", MT_INFO, MS_OK, response);
+        messageInit(0, NULL, "INFO", MT_INFO, MS_OK, response);
         return response;
     }
 
@@ -203,32 +207,30 @@ Message *parseRequest(Message *request, ConnState state)
             flags = *((int *)(request->content));
             if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
-                messageInit(0, NULL, "File opened", MT_INFO, MS_OK, response);
+                messageInit(0, NULL, "OPEN", MT_INFO, MS_OK, response);
             }
             else if (errno == EOVERFLOW)
             {
                 if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
                 {
-                    messageInit(size, buf, "Capacity miss on create file", MT_INFO, MS_OKCAP, response);
+                    messageInit(size, buf, "OPEN|CAPMISS", MT_INFO, MS_OKCAP, response);
                     free(buf);
                 }
                 else
                 {
                     perror("Something went wrong while serializing a container array...");
-                    messageInit(0, NULL, "Error on capacity miss", MT_INFO, MS_ERR, response);
+                    messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
                 }
-                if (fcsSize != -1)
+
+                for (i = 0; i < fcsSize; i++)
                 {
-                    for (i = 0; i < fcsSize; i++)
-                    {
-                        destroyContainer(fcs + i);
-                    }
-                    free(fcs);
+                    destroyContainer(fcs + i);
                 }
+                free(fcs);
             }
             else
             {
-                messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+                messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
             }
             return response;
         }
@@ -238,11 +240,11 @@ Message *parseRequest(Message *request, ConnState state)
     {
         if (conn_closeFile(request->info, state) == 0)
         {
-            messageInit(0, NULL, "File closed", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "CLOSED", MT_INFO, MS_OK, response);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -255,23 +257,23 @@ Message *parseRequest(Message *request, ConnState state)
         size = getSize(request->info, state.fs);
         if (size == 0)
         {
-            messageInit(0, NULL, "No such file!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR|MISSING", MT_INFO, MS_ERR, response);
             return response;
         }
 
         buf = malloc(size);
         if (buf == NULL)
         {
-            messageInit(0, NULL, "Server error!", MT_INFO, MS_INTERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_INTERR, response);
             return response;
         }
         if (conn_readFile(request->info, &buf, size, state) == 0)
         {
-            messageInit(size, buf, "Read done", MT_INFO, MS_OK, response);
+            messageInit(size, buf, "READ", MT_INFO, MS_OK, response);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         free(buf);
         return response;
@@ -286,32 +288,29 @@ Message *parseRequest(Message *request, ConnState state)
 
         if (conn_writeFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
-            messageInit(0, NULL, "Write done", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "WRITE", MT_INFO, MS_OK, response);
         }
         else if (errno == EOVERFLOW)
         {
             if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
             {
-                messageInit(size, buf, "Capacity miss on write", MT_INFO, MS_OKCAP, response);
+                messageInit(size, buf, "WRITE|CAPMISS", MT_INFO, MS_OKCAP, response);
                 free(buf);
             }
             else
             {
                 perror("Something went wrong while serializing a container array...");
-                messageInit(0, NULL, "Error on capacity miss", MT_INFO, MS_ERR, response);
+                messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
             }
-            if (fcsSize != -1)
+            for (i = 0; i < fcsSize; i++)
             {
-                for (i = 0; i < fcsSize; i++)
-                {
-                    destroyContainer(fcs + i);
-                }
-                free(fcs);
+                destroyContainer(fcs + i);
             }
+            free(fcs);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -325,32 +324,29 @@ Message *parseRequest(Message *request, ConnState state)
 
         if (conn_appendFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
-            messageInit(0, NULL, "Append done", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "APPEND", MT_INFO, MS_OK, response);
         }
         else if (errno == EOVERFLOW)
         {
             if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
             {
-                messageInit(size, buf, "Capacity miss on append", MT_INFO, MS_OKCAP, response);
+                messageInit(size, buf, "APPEND|CAPMISS", MT_INFO, MS_OKCAP, response);
                 free(buf);
             }
             else
             {
                 perror("Something went wrong while serializing a container array...");
-                messageInit(0, NULL, "Error on capacity miss", MT_INFO, MS_ERR, response);
+                messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
             }
-            if (fcsSize != -1)
+            for (i = 0; i < fcsSize; i++)
             {
-                for (i = 0; i < fcsSize; i++)
-                {
-                    destroyContainer(fcs + i);
-                }
-                free(fcs);
+                destroyContainer(fcs + i);
             }
+            free(fcs);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -359,18 +355,18 @@ Message *parseRequest(Message *request, ConnState state)
     {
         if (conn_removeFile(request->info, state) == 0)
         {
-            messageInit(0, NULL, "File Removed", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "REMOVED", MT_INFO, MS_OK, response);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
 
     case (MT_DISCONNECT):
     {
-        messageInit(0, NULL, "Disconnected", MT_INFO, MS_OK, response);
+        messageInit(0, NULL, "DISCONNECTED", MT_INFO, MS_OK, response);
         return response;
     }
 
@@ -378,11 +374,11 @@ Message *parseRequest(Message *request, ConnState state)
     {
         if (conn_lockFile(request->info, state) == 0)
         {
-            messageInit(0, NULL, "File Locked", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "LOCKED", MT_INFO, MS_OK, response);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -391,11 +387,11 @@ Message *parseRequest(Message *request, ConnState state)
     {
         if (conn_unlockFile(request->info, state) == 0)
         {
-            messageInit(0, NULL, "File Unlocked", MT_INFO, MS_OK, response);
+            messageInit(0, NULL, "UNLOCKED", MT_INFO, MS_OK, response);
         }
         else
         {
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -414,7 +410,7 @@ Message *parseRequest(Message *request, ConnState state)
         if (amount > 0)
         {
             serializeContainerArray(fc, amount, &size, &buf);
-            sprintf(info, "Read %d files", amount);
+            sprintf(info, "READN:%d", amount);
             messageInit(size, buf, info, MT_INFO, MS_OK, response);
             for (i = 0; i < amount; i++)
             {
@@ -426,7 +422,7 @@ Message *parseRequest(Message *request, ConnState state)
         else
         {
             free(fc);
-            messageInit(0, NULL, "Error!", MT_INFO, MS_ERR, response);
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -467,14 +463,14 @@ int _sendMessageWrapper(void *args)
 void logConnection(ConnState state)
 {
     char parsed[36 + 100];
-    sprintf(parsed, "%s >Connected", state.uuid);
+    sprintf(parsed, ">Connected >UUID:%s", state.uuid);
     logger(parsed, "CONN_OPEN");
 }
 
 void logDisconnect(ConnState state)
 {
     char parsed[36 + 100];
-    sprintf(parsed, "%s >Disconnected", state.uuid);
+    sprintf(parsed, ">Disconnected >UUID:%s", state.uuid);
     logger(parsed, "CONN_CLOSE");
 }
 
@@ -484,7 +480,7 @@ void logRequest(Message *request, ConnState state)
     if (request->info == NULL)
     {
         parsed = malloc(500);
-        sprintf(parsed, "%s >MALFORMED", state.uuid);
+        sprintf(parsed, ">MALFORMED >UUID:%s", state.uuid);
     }
     else
     {
@@ -493,57 +489,57 @@ void logRequest(Message *request, ConnState state)
         {
         case (MT_INFO):
         {
-            sprintf(parsed, "%s >INFO >%s", state.uuid, request->info);
+            sprintf(parsed, ">INFO >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FOPEN):
         {
-            sprintf(parsed, "%s >OPEN >%s", state.uuid, request->info);
+            sprintf(parsed, ">OPEN >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FCLOSE):
         {
-            sprintf(parsed, "%s >CLOSE >%s", state.uuid, request->info);
+            sprintf(parsed, ">CLOSE >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FREAD):
         {
-            sprintf(parsed, "%s >READ >%s", state.uuid, request->info);
+            sprintf(parsed, ">READ >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FWRITE):
         {
-            sprintf(parsed, "%s >WRITE >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, ">WRITE >UUID:%s >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FAPPEND):
         {
-            sprintf(parsed, "%s >APPEND >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, ">APPEND >UUID:%s >Size:%ld >%s", state.uuid, request->size, request->info);
             break;
         }
         case (MT_FREM):
         {
-            sprintf(parsed, "%s >REMOVE >%s", state.uuid, request->info);
+            sprintf(parsed, ">REMOVE >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_DISCONNECT):
         {
-            sprintf(parsed, "%s >DISCONNECT >%s", state.uuid, request->info);
+            sprintf(parsed, ">DISCONNECT >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FLOCK):
         {
-            sprintf(parsed, "%s >LOCK >%s", state.uuid, request->info);
+            sprintf(parsed, ">LOCK >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FUNLOCK):
         {
-            sprintf(parsed, "%s >UNLOCK >%s", state.uuid, request->info);
+            sprintf(parsed, ">UNLOCK >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         case (MT_FREADN):
         {
-            sprintf(parsed, "%s >READN >%s", state.uuid, request->info);
+            sprintf(parsed, ">READN >UUID:%s >%s", state.uuid, request->info);
             break;
         }
         }
@@ -558,12 +554,12 @@ void logResponse(Message *response, ConnState state)
     if (response->info == NULL)
     {
         parsed = malloc(500);
-        sprintf(parsed, "%s >MALFORMED", state.uuid);
+        sprintf(parsed, ">MALFORMED >UUID:%s", state.uuid);
     }
     else
     {
         parsed = malloc(500 + strlen(response->info));
-        sprintf(parsed, "%s >%s >Size:%ld", state.uuid, response->info, response->size);
+        sprintf(parsed, ">%s >Size:%ld >UUID:%s ", response->info, response->size, state.uuid);
     }
     logger(parsed, "RESPONSE");
     free(parsed);

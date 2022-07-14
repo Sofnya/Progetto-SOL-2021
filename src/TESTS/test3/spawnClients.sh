@@ -6,7 +6,7 @@ while true
     if [ $num_children -lt 10 ];
     then
         i=$((1 + $RANDOM % 3))
-        "./client$i.sh" &
+        ./client$i.sh > /dev/null &
     fi
     done
 wait

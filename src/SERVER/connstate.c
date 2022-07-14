@@ -55,6 +55,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
             return -1;
         }
 
+        capMiss = 1;
         *fcsSize = freeSpace(0, fcs, state.fs);
         if (*fcsSize == -1)
         {
@@ -123,6 +124,9 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
         {
             return -1;
         }
+
+        capMiss = 1;
+
         *fcsSize = freeSpace(size, fcs, state.fs);
         if (*fcsSize == -1)
         {

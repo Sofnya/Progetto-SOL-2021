@@ -323,7 +323,7 @@ int filesTest()
     void *content;
 
     UNSAFE_NULL_CHECK(file1 = malloc(sizeof(File)));
-    ERROR_CHECK(fileInit("file1", file1));
+    ERROR_CHECK(fileInit("file1", 0, file1));
 
     content = alphabet;
 

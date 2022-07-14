@@ -130,12 +130,8 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 
         strcpy(nameCopy, pathname);
 
-        CLEANUP_ERROR_CHECK(fileInit(pathname, file), { pthread_mutex_unlock(fs->filesListMtx); });
+        CLEANUP_ERROR_CHECK(fileInit(pathname, fs->isCompressed, file), { pthread_mutex_unlock(fs->filesListMtx); });
 
-        if (fs->isCompressed)
-        {
-            fileCompress(file);
-        }
         CLEANUP_ERROR_CHECK(hashTablePut(pathname, (void *)file, *fs->filesTable), { pthread_mutex_unlock(fs->filesListMtx); });
 
         CLEANUP_ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList), { pthread_mutex_unlock(fs->filesListMtx); });
@@ -339,7 +335,6 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
-    puts("Locking file...");
     if (fd->flags & FI_LOCK)
     {
         errno = EINVAL;
@@ -351,7 +346,6 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
     SAFE_ERROR_CHECK(fileLock(file));
     fd->flags |= FI_LOCK;
 
-    puts("Succesfully locked file");
     return 0;
 }
 

@@ -7,7 +7,7 @@
 #include "SERVER/threadpool.h"
 #include "COMMON/macros.h"
 #include "SERVER/logging.h"
-#define TP_DEBUG
+
 void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool)
 {
     pool->_coreSize = coreSize;

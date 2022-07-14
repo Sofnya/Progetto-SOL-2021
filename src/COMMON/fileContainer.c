@@ -60,7 +60,6 @@ int serializeContainer(FileContainer fc, void **buf, uint64_t *size)
     uint64_t cur = 0;
     size_t nameLen = strlen(fc.name) + 1;
 
-    printf("Serializing container with name:%s and size:%ld\n", fc.name, fc.size);
     *size = calcSize(fc);
 
     SAFE_NULL_CHECK(*buf = malloc(*size));
@@ -118,7 +117,6 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
     void *curBuf = NULL;
     uint64_t curSize, finalSize = 0, curLoc = 0;
 
-    printf("Called serializeContainerArray with |%p|, n:%ld\n", fc, n);
     if (n == 0)
     {
         puts("Called serialize with 0 size array, this shouldn't happen!");
