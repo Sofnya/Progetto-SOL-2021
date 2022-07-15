@@ -79,11 +79,9 @@ int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
 
     SAFE_NULL_CHECK(fs->curN = malloc(sizeof(AtomicInt)));
     SAFE_NULL_CHECK(fs->curSize = malloc(sizeof(AtomicInt)));
-    SAFE_NULL_CHECK(fs->locking = malloc(sizeof(AtomicInt)));
 
     atomicInit(fs->curN);
     atomicInit(fs->curSize);
-    atomicInit(fs->locking);
 
     SAFE_NULL_CHECK(fs->filesList = malloc(sizeof(List)));
     SAFE_NULL_CHECK(fs->filesListMtx = malloc(sizeof(pthread_mutex_t)));
@@ -142,7 +140,6 @@ void fsDestroy(FileSystem *fs)
     pthread_rwlock_destroy(fs->rwLock);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
-    atomicDestroy(fs->locking);
 
     free(fs->filesList);
     free(fs->filesTable);
@@ -150,7 +147,6 @@ void fsDestroy(FileSystem *fs)
     free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
-    free(fs->locking);
 }
 
 /**
@@ -460,9 +456,6 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
         return -1;
     }
 
-    printf("Attempting to lock, locking:%ld\n", atomicGet(fs->locking));
-
-    atomicInc(1, fs->locking);
     while (1)
     {
         PTHREAD_CHECK(READLOCK);
@@ -474,7 +467,6 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
         {
             tmp = errno;
             PTHREAD_CHECK(UNLOCK);
-            atomicDec(1, fs->locking);
             break;
         }
 
