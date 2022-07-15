@@ -7,7 +7,6 @@
 #include "COMMON/macros.h"
 #include "SERVER/policy.h"
 #include "SERVER/logging.h"
-#define DEBUG
 
 #define READLOCK readLock(fs->rwLock, __LINE__, __func__)
 #define WRITELOCK writeLock(fs->rwLock, __LINE__, __func__)
@@ -80,9 +79,11 @@ int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
 
     SAFE_NULL_CHECK(fs->curN = malloc(sizeof(AtomicInt)));
     SAFE_NULL_CHECK(fs->curSize = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(fs->locking = malloc(sizeof(AtomicInt)));
 
     atomicInit(fs->curN);
     atomicInit(fs->curSize);
+    atomicInit(fs->locking);
 
     SAFE_NULL_CHECK(fs->filesList = malloc(sizeof(List)));
     SAFE_NULL_CHECK(fs->filesListMtx = malloc(sizeof(pthread_mutex_t)));
@@ -141,6 +142,7 @@ void fsDestroy(FileSystem *fs)
     pthread_rwlock_destroy(fs->rwLock);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
+    atomicDestroy(fs->locking);
 
     free(fs->filesList);
     free(fs->filesTable);
@@ -148,6 +150,7 @@ void fsDestroy(FileSystem *fs)
     free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
+    free(fs->locking);
 }
 
 /**
@@ -438,7 +441,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
             continue;
         }
 
-        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur, &((*buf)[i])), {LISTUNLOCK;free(buf); });
+        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur, &((*buf)[i])), {LISTUNLOCK;  free(buf); });
         free(curBuffer);
         i++;
     }
@@ -457,6 +460,9 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
         return -1;
     }
 
+    printf("Attempting to lock, locking:%ld\n", atomicGet(fs->locking));
+
+    atomicInc(1, fs->locking);
     while (1)
     {
         PTHREAD_CHECK(READLOCK);
@@ -468,11 +474,12 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
         {
             tmp = errno;
             PTHREAD_CHECK(UNLOCK);
+            atomicDec(1, fs->locking);
             break;
         }
 
         PTHREAD_CHECK(UNLOCK);
-        usleep(100);
+        usleep(rand() % 1000);
     }
 
     if (tmp == 0)

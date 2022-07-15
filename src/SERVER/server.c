@@ -207,7 +207,14 @@ Message *parseRequest(Message *request, ConnState state)
             flags = *((int *)(request->content));
             if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
-                messageInit(0, NULL, "OPEN", MT_INFO, MS_OK, response);
+                if (flags &= O_CREATE)
+                {
+                    messageInit(0, NULL, "OPEN|CREATE", MT_INFO, MS_OK, response);
+                }
+                else
+                {
+                    messageInit(0, NULL, "OPEN", MT_INFO, MS_OK, response);
+                }
             }
             else if (errno == EOVERFLOW)
             {
@@ -477,6 +484,7 @@ void logDisconnect(ConnState state)
 void logRequest(Message *request, ConnState state)
 {
     char *parsed;
+    long long nOpen = hashTableSize(*state.fds);
     if (request->info == NULL)
     {
         parsed = malloc(500);
@@ -489,57 +497,57 @@ void logRequest(Message *request, ConnState state)
         {
         case (MT_INFO):
         {
-            sprintf(parsed, ">INFO >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">INFO >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FOPEN):
         {
-            sprintf(parsed, ">OPEN >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">OPEN >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FCLOSE):
         {
-            sprintf(parsed, ">CLOSE >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">CLOSE >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FREAD):
         {
-            sprintf(parsed, ">READ >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">READ >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FWRITE):
         {
-            sprintf(parsed, ">WRITE >UUID:%s >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, ">WRITE >UUID:%s >Size:%ld >%s >NOPEN:%lld", state.uuid, request->size, request->info, nOpen);
             break;
         }
         case (MT_FAPPEND):
         {
-            sprintf(parsed, ">APPEND >UUID:%s >Size:%ld >%s", state.uuid, request->size, request->info);
+            sprintf(parsed, ">APPEND >UUID:%s >Size:%ld >%s >NOPEN:%lld", state.uuid, request->size, request->info, nOpen);
             break;
         }
         case (MT_FREM):
         {
-            sprintf(parsed, ">REMOVE >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">REMOVE >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_DISCONNECT):
         {
-            sprintf(parsed, ">DISCONNECT >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">DISCONNECT >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FLOCK):
         {
-            sprintf(parsed, ">LOCK >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">LOCK >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FUNLOCK):
         {
-            sprintf(parsed, ">UNLOCK >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">UNLOCK >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         case (MT_FREADN):
         {
-            sprintf(parsed, ">READN >UUID:%s >%s", state.uuid, request->info);
+            sprintf(parsed, ">READN >UUID:%s >%s >NOPEN:%lld", state.uuid, request->info, nOpen);
             break;
         }
         }

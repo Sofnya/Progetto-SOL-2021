@@ -24,7 +24,7 @@ typedef struct _filesystem
     List *filesList;
     pthread_mutex_t *filesListMtx;
     HashTable *filesTable;
-    AtomicInt *curSize, *curN;
+    AtomicInt *curSize, *curN, *locking;
     uint64_t maxSize, maxN;
     int isCompressed;
 

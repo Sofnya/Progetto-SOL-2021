@@ -134,15 +134,22 @@ int main(int argc, char *argv[])
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {
                     usleep(delay);
-                    if (openFile(tmp, 0) == -1 && verbose)
+                    if (openFile(tmp, 0) == -1)
                     {
-                        printf("Couldn't open file %s\n", tmp);
+                        if (verbose)
+                        {
+                            printf("Couldn't open file %s\n", tmp);
+                        }
+                        continue;
                     }
                 }
                 usleep(delay);
                 if (readFile(tmp, &buf, &size) == -1 && verbose)
                 {
-                    printf("Couldn't read file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't read file %s\n", tmp);
+                    }
                 }
                 else
                 {
@@ -153,7 +160,10 @@ int main(int argc, char *argv[])
                     usleep(delay);
                     if (closeFile(tmp) == -1 && verbose)
                     {
-                        printf("Couldn't close file %s\n", tmp);
+                        if (verbose)
+                        {
+                            printf("Couldn't close file %s\n", tmp);
+                        }
                     }
                 }
 
@@ -202,14 +212,21 @@ int main(int argc, char *argv[])
             do
             {
                 usleep(delay);
-                if (openFile(tmp, 0) == -1 && verbose)
+                if (openFile(tmp, 0) == -1)
                 {
-                    printf("Couldn't open file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't open file %s\n", tmp);
+                    }
+                    continue;
                 }
                 usleep(delay);
-                if (lockFile(tmp) == -1 && verbose)
+                if (lockFile(tmp) == -1)
                 {
-                    printf("Couldn't lock file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't lock file %s\n", tmp);
+                    }
                 }
                 else
                 {
@@ -225,9 +242,12 @@ int main(int argc, char *argv[])
             {
                 usleep(delay);
 
-                if (unlockFile(tmp) == -1 && verbose)
+                if (unlockFile(tmp) == -1)
                 {
-                    printf("Couldn't unlock file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't unlock file %s\n", tmp);
+                    }
                 }
                 else
                 {
@@ -247,16 +267,27 @@ int main(int argc, char *argv[])
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {
                     usleep(delay);
-                    openFile(tmp, O_LOCK);
+                    if (openFile(tmp, O_LOCK) == -1)
+                    {
+                        if (verbose)
+                        {
+                            printf("COuldn't open file %s for removal.\n", tmp);
+                        }
+                        continue;
+                    }
                     if (verbose)
                     {
                         printf("Opened file %s for removal.\n", tmp);
                     }
                 }
                 usleep(delay);
-                if (removeFile(tmp) == -1 && verbose)
+                if (removeFile(tmp) == -1)
                 {
-                    printf("Couldn't remove file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't remove file %s\n", tmp);
+                    }
+                    continue;
                 }
                 else if (verbose)
                 {
@@ -330,7 +361,7 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
             sprintf(path, "%s/%s", dirPath, cur->d_name);
 
             usleep(delay);
-            if ((create_file(path, O_CREATE | O_LOCK, missDirName) == -1))
+            if (create_file(path, O_CREATE | O_LOCK, missDirName) == -1)
             {
                 if (verbose)
                 {
@@ -340,15 +371,26 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
                 continue;
             }
             usleep(delay);
-            if (writeFile(path, missDirName) == -1 && verbose)
+            if (writeFile(path, missDirName) == -1)
             {
-                printf("Couldn't write file %s\n", path);
+                if (verbose)
+                {
+                    printf("Couldn't write file %s\n", path);
+                }
             }
             else
+            {
                 count++;
+            }
 
             usleep(delay);
-            closeFile(path);
+            if (closeFile(path) == -1)
+            {
+                if (verbose)
+                {
+                    printf("Couldn't close file %s\n", path);
+                }
+            }
             free(path);
         }
     }

@@ -130,7 +130,7 @@ int receiveMessage(int fd, Message *m)
 
     READ_CHECK(read(fd, &infoSize, sizeof(uint64_t)));
 
-    printf("Recieved message of type:%d, and status:%d and infoSize:%ld\n", m->type, m->status, infoSize);
+    printf("Received message of type:%d, and status:%d and infoSize:%ld\n", m->type, m->status, infoSize);
 
     if (infoSize <= 0)
     {

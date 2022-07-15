@@ -405,7 +405,7 @@ int create_file(const char *pathname, int flags, const char *dirname)
 
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
-    success = (m.status == MS_OK || m.status == MS_OKCAP);
+    success = (m.status != MS_ERR);
     if (verbose)
     {
         puts(m.info);

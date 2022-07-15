@@ -384,6 +384,25 @@ int hashTablePop(char **key, void **value, HashTable table)
 }
 
 /**
+ *
+ * @brief Gets the number of elements currently stored in table, roughly.
+ *
+ * @param table the HashTable to query.
+ * @return uint64_t the number of elements currently stored in table.
+ */
+long long hashTableSize(HashTable table)
+{
+    int i;
+    long long count;
+    for (i = 0; i < table.size; i++)
+    {
+        count += listSize(*table._table[i].row);
+    }
+
+    return count;
+}
+
+/**
  * @brief Helper function for internal use only. Returns the location in the _table of given key.
  *
  * @param key the key to be hashed.

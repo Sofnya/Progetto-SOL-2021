@@ -39,6 +39,7 @@ int hashTableGet(const char *key, void **value, HashTable table);
 int hashTableRemove(const char *key, void **value, HashTable table);
 int hashTablePut(char *key, void *value, HashTable table);
 int hashTablePop(char **key, void **value, HashTable table);
+long long hashTableSize(HashTable table);
 
 uint64_t _getLoc(const char *key, uint64_t size);
 
