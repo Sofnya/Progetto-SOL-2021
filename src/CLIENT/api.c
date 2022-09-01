@@ -142,6 +142,7 @@ int readFile(const char *pathname, void **buf, size_t *size)
 
     if (success)
         return 0;
+
     return -1;
 }
 
@@ -150,7 +151,7 @@ int readNFiles(int N, const char *dirname)
     Message m;
     bool success;
     FileContainer *fc;
-    uint64_t amount;
+    size_t amount;
     char info[100];
 
     sprintf(info, "Requesting %d files", N);
@@ -182,6 +183,10 @@ int readNFiles(int N, const char *dirname)
 
     __writeToDir(fc, amount, dirname);
 
+    for (int i = 0; i < amount; i++)
+    {
+        destroyContainer(fc + i);
+    }
     free(fc);
     messageDestroy(&m);
 
@@ -191,10 +196,10 @@ int readNFiles(int N, const char *dirname)
 int writeFile(const char *pathname, const char *dirname)
 {
     FILE *fd;
-    long size;
+    size_t size;
     void *buffer;
     FileContainer *fc;
-    uint64_t amount;
+    size_t amount;
     Message m;
     bool success;
 
@@ -217,6 +222,7 @@ int writeFile(const char *pathname, const char *dirname)
     }
     fclose(fd);
     SAFE_ERROR_CHECK(messageInit(size, buffer, pathname, MT_FWRITE, MS_REQ, &m));
+    free(buffer);
     SAFE_ERROR_CHECK(sendMessage(sfd, &m));
     messageDestroy(&m);
     SAFE_ERROR_CHECK(receiveMessage(sfd, &m));
@@ -246,7 +252,7 @@ int appendToFile(const char *pathname, void *buf, size_t size, const char *dirna
     Message m;
     bool success;
     FileContainer *fc;
-    uint64_t amount;
+    size_t amount;
 
     if (verbose)
     {
@@ -391,7 +397,7 @@ int create_file(const char *pathname, int flags, const char *dirname)
     Message m;
     bool success;
     FileContainer *fc;
-    uint64_t amount;
+    size_t amount;
 
     if (verbose)
     {

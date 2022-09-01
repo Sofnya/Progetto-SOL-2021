@@ -87,7 +87,7 @@ int conn_closeFile(const char *path, ConnState state)
     return closeFile(fd, state.fs);
 }
 
-int conn_readFile(const char *path, void **buf, uint64_t size, ConnState state)
+int conn_readFile(const char *path, void **buf, size_t size, ConnState state)
 {
     FileDescriptor *fd;
 
@@ -100,7 +100,7 @@ int conn_readFile(const char *path, void **buf, uint64_t size, ConnState state)
     return readFile(fd, buf, size, state.fs);
 }
 
-int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
     int capMiss = 0;
@@ -142,7 +142,7 @@ int conn_writeFile(const char *path, void *buf, uint64_t size, FileContainer **f
     return 0;
 }
 
-int conn_appendFile(const char *path, void *buf, uint64_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
 {
     FileDescriptor *fd;
     int capMiss = 0;

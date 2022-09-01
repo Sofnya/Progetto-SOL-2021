@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <dirent.h>
+#include <signal.h>
 
 #include "CLIENT/api.h"
 #include "CLIENT/clientHelpers.h"
@@ -26,6 +27,7 @@ int main(int argc, char *argv[])
     HashTable openFiles;
     void *flag;
 
+    sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
     hashTableInit(50, &openFiles);
 
     while ((opt = getopt(argc, argv, "hf:w:W:D:r:R::d:t:l:u:c:p")) != -1)
@@ -93,7 +95,8 @@ int main(int argc, char *argv[])
         }
         case ('W'):
         {
-            tmp = strtok(optarg, ",");
+            char *saveptr;
+            tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
                 usleep(delay);
@@ -111,7 +114,7 @@ int main(int argc, char *argv[])
                 usleep(delay);
                 closeFile(tmp);
 
-            } while ((tmp = strtok(NULL, ",")) != NULL);
+            } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
         case ('D'):
@@ -127,8 +130,9 @@ int main(int argc, char *argv[])
         case ('r'):
         {
             void *buf;
+            char *saveptr;
             size_t size;
-            tmp = strtok(optarg, ",");
+            tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
@@ -144,7 +148,7 @@ int main(int argc, char *argv[])
                     }
                 }
                 usleep(delay);
-                if (readFile(tmp, &buf, &size) == -1 && verbose)
+                if (readFile(tmp, &buf, &size) == -1)
                 {
                     if (verbose)
                     {
@@ -154,6 +158,7 @@ int main(int argc, char *argv[])
                 else
                 {
                     __writeBufToDir(buf, size, tmp, readDirName);
+                    free(buf);
                 }
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
                 {
@@ -167,7 +172,7 @@ int main(int argc, char *argv[])
                     }
                 }
 
-            } while ((tmp = strtok(NULL, ",")) != NULL);
+            } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
 
@@ -207,8 +212,8 @@ int main(int argc, char *argv[])
         }
         case ('l'):
         {
-
-            tmp = strtok(optarg, ",");
+            char *saveptr;
+            tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
                 usleep(delay);
@@ -232,12 +237,13 @@ int main(int argc, char *argv[])
                 {
                     hashTablePut(tmp, NULL, openFiles);
                 }
-            } while ((tmp = strtok(NULL, ",")) != NULL);
+            } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
         case ('u'):
         {
-            tmp = strtok(optarg, ",");
+            char *saveptr;
+            tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
                 usleep(delay);
@@ -256,12 +262,13 @@ int main(int argc, char *argv[])
 
                     hashTableRemove(tmp, NULL, openFiles);
                 }
-            } while ((tmp = strtok(NULL, ",")) != NULL);
+            } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
         case ('c'):
         {
-            tmp = strtok(optarg, ",");
+            char *saveptr;
+            tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
                 if (hashTableGet(tmp, &flag, openFiles) == -1)
@@ -294,7 +301,7 @@ int main(int argc, char *argv[])
                     printf("Removed file %s\n", tmp);
                 }
 
-            } while ((tmp = strtok(NULL, ",")) != NULL);
+            } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             puts(optarg);
             break;
         }
@@ -312,6 +319,12 @@ int main(int argc, char *argv[])
         }
     }
 
+    puts("Exiting");
+    if (sockname != NULL)
+    {
+        usleep(delay);
+        closeConnection(sockname);
+    }
     hashTableDestroy(&openFiles);
 }
 

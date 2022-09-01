@@ -70,7 +70,7 @@ int unlock(pthread_rwlock_t *lock, int line, const char *func)
  * @param fs
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs)
+int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
 {
     pthread_mutexattr_t attr;
     pthread_rwlockattr_t rwAttr;
@@ -276,7 +276,7 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
+int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
 {
     File *file;
     int success, tmpErr;
@@ -315,10 +315,10 @@ int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
+int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 {
     File *file;
-    uint64_t oldSize, newSize;
+    size_t oldSize, newSize;
     char log[500];
     if (!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK)))
     {
@@ -355,10 +355,10 @@ int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
  * @param fs the FileSystem containing the chosen file.
  * @return int 0 on a success, -1 and sets errno on failure.
  */
-int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
+int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 {
     File *file;
-    uint64_t oldSize, newSize;
+    size_t oldSize, newSize;
     char log[500];
 
     if (!((fd->flags & FI_APPEND) && (fd->flags & FI_LOCK)))
@@ -393,7 +393,6 @@ int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs)
  *
  * @param N The number of files to read, if N < 0 reads all of the servers files.
  * @param buf Where the files will be stored, will become an array of buffers.
- * @param size Where bufs sizes will be stored, also an array.
  * @param fs The fileSystem to query.
  * @return int on success, the number of files actually read, on error -1 and sets errno.
  */
@@ -402,7 +401,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     FileDescriptor *curFD;
     char *cur = NULL;
     int amount, i = 0;
-    uint64_t curSize;
+    size_t curSize;
     void *curBuffer;
 
     PTHREAD_CHECK(LISTLOCK);
@@ -449,41 +448,21 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
-    int tmp;
     if (fd->flags & FI_LOCK)
     {
         errno = EINVAL;
         return -1;
     }
 
-    while (1)
-    {
-        PTHREAD_CHECK(READLOCK);
+    PTHREAD_CHECK(READLOCK);
 
-        CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
+    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
-        errno = 0;
-        if (fileTryLock(file) == 0 || errno != EBUSY)
-        {
-            tmp = errno;
-            PTHREAD_CHECK(UNLOCK);
-            break;
-        }
+    PTHREAD_CHECK(UNLOCK);
+    fileLock(file);
 
-        PTHREAD_CHECK(UNLOCK);
-        usleep(rand() % 1000);
-    }
-
-    if (tmp == 0)
-    {
-        fd->flags |= FI_LOCK;
-        return 0;
-    }
-    else
-    {
-        errno = tmp;
-        return -1;
-    }
+    fd->flags |= FI_LOCK;
+    return 0;
 }
 
 int unlockFile(FileDescriptor *fd, FileSystem *fs)
@@ -587,7 +566,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     }
     CLEANUP_PTHREAD_CHECK(LISTUNLOCK, UNLOCK);
 
-    SAFE_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable));
+    CLEANUP_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
     atomicDec(getFileTrueSize(file), fs->curSize);
     atomicDec(1, fs->curN);
@@ -606,12 +585,12 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
  *
  * @param pathname the name of the file.
  * @param fs the fileSystem containing the file
- * @return uint64_t the size of the file if it exists, 0 and sets errno otherwise.
+ * @return size_t the size of the file if it exists, 0 and sets errno otherwise.
  */
-uint64_t getSize(const char *pathname, FileSystem *fs)
+size_t getSize(const char *pathname, FileSystem *fs)
 {
     File *file;
-    uint64_t size;
+    size_t size;
     int tmp = 0;
 
     if (READLOCK != 0)
@@ -644,10 +623,10 @@ uint64_t getSize(const char *pathname, FileSystem *fs)
  *
  * @param pathname the name of the file.
  * @param fs the fileSystem containing the file
- * @return uint64_t the size of the file if it exists, 0 and sets errno otherwise.
+ * @return size_t the size of the file if it exists, 0 and sets errno otherwise.
  */
 
-uint64_t getTrueSize(const char *pathname, FileSystem *fs)
+size_t getTrueSize(const char *pathname, FileSystem *fs)
 {
     File *file;
 
@@ -671,12 +650,12 @@ uint64_t getTrueSize(const char *pathname, FileSystem *fs)
     return getFileTrueSize(file);
 }
 
-uint64_t getCurSize(FileSystem *fs)
+size_t getCurSize(FileSystem *fs)
 {
     return atomicGet(fs->curSize);
 }
 
-uint64_t getCurN(FileSystem *fs)
+size_t getCurN(FileSystem *fs)
 {
     return atomicGet(fs->curN);
 }
@@ -689,14 +668,14 @@ uint64_t getCurN(FileSystem *fs)
  * @param fs the fileSystem to modify.
  * @return int the number of files removed, aka the size of buf on success. -1 and sets errno on failure.
  */
-int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs)
+int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
 {
     int64_t toFree;
     FileContainer *curFile;
     FileDescriptor *curFd;
     List tmpFiles;
     void *tmpBuf;
-    uint64_t tmpSize, tmpTrueSize;
+    size_t tmpSize, tmpTrueSize;
     const char *target;
     char log[500];
     int n = 0, i = 0;

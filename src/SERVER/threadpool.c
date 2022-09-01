@@ -8,7 +8,7 @@
 #include "COMMON/macros.h"
 #include "SERVER/logging.h"
 
-void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool)
+void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
 {
     pool->_coreSize = coreSize;
     pool->_maxSize = maxSize;
@@ -138,9 +138,9 @@ void *_execLoop(void *args)
 void *_manage(void *args)
 {
     ThreadPool *pool = (ThreadPool *)args;
-    uint64_t curSize;
+    size_t curSize;
     struct _exec *task;
-    uint64_t i;
+    size_t i;
 
     while (!pool->_terminate)
     {
@@ -152,7 +152,7 @@ void *_manage(void *args)
 #endif
         if (curSize < pool->_coreSize)
         {
-            uint64_t threadsToSpawn = pool->_coreSize - curSize;
+            size_t threadsToSpawn = pool->_coreSize - curSize;
             for (i = threadsToSpawn; i > 0; i--)
             {
                 _spawnThread(pool);
@@ -174,7 +174,7 @@ void *_manage(void *args)
         }
         else if (syncqueueLen(*pool->_queue) > 0 && curSize < pool->_maxSize)
         {
-            uint64_t threadsToSpawn = _min(syncqueueLen(*pool->_queue), (pool->_maxSize - curSize));
+            size_t threadsToSpawn = _min(syncqueueLen(*pool->_queue), (pool->_maxSize - curSize));
             for (i = threadsToSpawn; i > 0; i--)
             {
                 _spawnThread(pool);
@@ -218,7 +218,7 @@ void _die(void *args)
     pthread_exit(NULL);
 }
 
-uint64_t _min(uint64_t a, uint64_t b)
+size_t _min(size_t a, size_t b)
 {
     if (a < b)
         return a;

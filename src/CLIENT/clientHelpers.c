@@ -12,8 +12,9 @@
 void __mkdir(char *path)
 {
     char *prev, *cur;
-    prev = strtok(path, "/");
-    while ((cur = strtok(NULL, "/")) != NULL)
+    char *saveptr;
+    prev = strtok_r(path, "/", &saveptr);
+    while ((cur = strtok_r(NULL, "/", &saveptr)) != NULL)
     {
         if (verbose)
         {
@@ -25,7 +26,7 @@ void __mkdir(char *path)
         prev[strlen(prev)] = '/';
     }
 }
-void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname)
+void __writeToDir(FileContainer *fc, size_t size, const char *dirname)
 {
     int i;
     char *path;
@@ -66,7 +67,7 @@ void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname)
     }
 }
 
-void __writeBufToDir(void *buf, uint64_t size, const char *fileName, const char *dirname)
+void __writeBufToDir(void *buf, size_t size, const char *fileName, const char *dirname)
 {
     char *path;
     FILE *file;

@@ -13,7 +13,7 @@
  * @param fc a pointer to the container to be initialized.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int containerInit(uint64_t size, void *content, const char *name, FileContainer *fc)
+int containerInit(size_t size, void *content, const char *name, FileContainer *fc)
 {
     fc->size = size;
     if (size != 0)
@@ -55,21 +55,23 @@ void destroyContainer(FileContainer *fc)
  * @param size where the size of the new buf will be stored.
  * @return int 0 on success, -1 and sets errno on failure
  */
-int serializeContainer(FileContainer fc, void **buf, uint64_t *size)
+int serializeContainer(FileContainer fc, void **buf, size_t *size)
 {
-    uint64_t cur = 0;
+    size_t cur = 0;
     size_t nameLen = strlen(fc.name) + 1;
 
     *size = calcSize(fc);
 
     SAFE_NULL_CHECK(*buf = malloc(*size));
 
-    memcpy(*buf + cur, (void *)&fc.size, sizeof(uint64_t));
-    cur += sizeof(uint64_t);
+    memcpy(*buf + cur, (void *)&fc.size, sizeof(size_t));
+    cur += sizeof(size_t);
     memcpy(*buf + cur, (void *)fc.name, nameLen);
     cur += nameLen;
-    memcpy(*buf + cur, fc.content, fc.size);
-
+    if (fc.size > 0)
+    {
+        memcpy(*buf + cur, fc.content, fc.size);
+    }
     return 0;
 }
 
@@ -80,14 +82,14 @@ int serializeContainer(FileContainer fc, void **buf, uint64_t *size)
  * @param size the size of buf.
  * @return FileContainer a new initialized FileContainer.
  */
-FileContainer deserializeContainer(void *buf, uint64_t size)
+FileContainer deserializeContainer(void *buf, size_t size)
 {
     FileContainer fc;
-    uint64_t cur = 0;
+    size_t cur = 0;
     size_t nameLen = -1;
 
-    fc.size = *(uint64_t *)(buf + cur);
-    cur += sizeof(uint64_t);
+    fc.size = *(size_t *)(buf + cur);
+    cur += sizeof(size_t);
 
     nameLen = strlen((char *)(buf + cur)) + 1;
 
@@ -96,8 +98,15 @@ FileContainer deserializeContainer(void *buf, uint64_t size)
     memcpy(fc.name, buf + cur, nameLen);
     cur += nameLen;
 
-    UNSAFE_NULL_CHECK(fc.content = malloc(fc.size));
-    memcpy(fc.content, buf + cur, fc.size);
+    if (fc.size > 0)
+    {
+        UNSAFE_NULL_CHECK(fc.content = malloc(fc.size));
+        memcpy(fc.content, buf + cur, fc.size);
+    }
+    else
+    {
+        fc.content = NULL;
+    }
 
     return fc;
 }
@@ -111,11 +120,11 @@ FileContainer deserializeContainer(void *buf, uint64_t size)
  * @param buf where the serialized array will be stored.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void **buf)
+int serializeContainerArray(FileContainer *fc, size_t n, size_t *size, void **buf)
 {
     int i;
     void *curBuf = NULL;
-    uint64_t curSize, finalSize = 0, curLoc = 0;
+    size_t curSize, finalSize = 0, curLoc = 0;
 
     if (n == 0)
     {
@@ -124,7 +133,7 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
     }
     for (i = 0; i < n; i++)
     {
-        finalSize += sizeof(uint64_t) + calcSize(fc[i]);
+        finalSize += sizeof(size_t) + calcSize(fc[i]);
     }
 
     *size = finalSize;
@@ -134,8 +143,8 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
     {
         SAFE_ERROR_CHECK(serializeContainer(fc[i], &curBuf, &curSize))
 
-        memcpy(*buf + curLoc, (void *)&curSize, sizeof(uint64_t));
-        curLoc += sizeof(uint64_t);
+        memcpy(*buf + curLoc, (void *)&curSize, sizeof(size_t));
+        curLoc += sizeof(size_t);
         memcpy(*buf + curLoc, curBuf, curSize);
         curLoc += curSize;
         free(curBuf);
@@ -151,15 +160,15 @@ int serializeContainerArray(FileContainer *fc, uint64_t n, uint64_t *size, void 
  * @param n where the size of the array will be stored.
  * @return FileContainer* the deserialized array.
  */
-FileContainer *deserializeContainerArray(void *buf, uint64_t size, uint64_t *n)
+FileContainer *deserializeContainerArray(void *buf, size_t size, size_t *n)
 {
     FileContainer *result;
-    uint64_t curLoc = 0, curSize, count = 0, i;
+    size_t curLoc = 0, curSize = 0, count = 0, i;
 
     while (curLoc < size)
     {
-        curSize = *(uint64_t *)(buf + curLoc);
-        curLoc += sizeof(uint64_t) + curSize;
+        curSize = *(size_t *)(buf + curLoc);
+        curLoc += sizeof(size_t) + curSize;
         count++;
     }
 
@@ -168,8 +177,8 @@ FileContainer *deserializeContainerArray(void *buf, uint64_t size, uint64_t *n)
     curLoc = 0;
     for (i = 0; i < count; i++)
     {
-        curSize = *(uint64_t *)(buf + curLoc);
-        curLoc += sizeof(uint64_t);
+        curSize = *(size_t *)(buf + curLoc);
+        curLoc += sizeof(size_t);
         result[i] = deserializeContainer(buf + curLoc, curSize);
         curLoc += curSize;
     }
@@ -182,9 +191,9 @@ FileContainer *deserializeContainerArray(void *buf, uint64_t size, uint64_t *n)
  * @brief Returns the serialized size of given FileContainer, in bytes.
  *
  * @param fc the FileContainer to serialize.
- * @return uint64_t the size of fc, once serialized.
+ * @return size_t the size of fc, once serialized.
  */
-uint64_t calcSize(FileContainer fc)
+size_t calcSize(FileContainer fc)
 {
-    return fc.size + strlen(fc.name) + 1 + sizeof(uint64_t);
+    return fc.size + strlen(fc.name) + 1 + sizeof(size_t);
 }

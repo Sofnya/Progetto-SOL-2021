@@ -25,7 +25,7 @@ typedef struct _filesystem
     pthread_mutex_t *filesListMtx;
     HashTable *filesTable;
     AtomicInt *curSize, *curN;
-    uint64_t maxSize, maxN;
+    size_t maxSize, maxN;
     int isCompressed;
 
     pthread_rwlock_t *rwLock;
@@ -38,15 +38,15 @@ typedef struct _fileDescriptor
     int flags;
 } FileDescriptor;
 
-int fsInit(uint64_t maxN, uint64_t maxSize, int isCompressed, FileSystem *fs);
+int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
 int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
-int readFile(FileDescriptor *fd, void **buf, uint64_t size, FileSystem *fs);
-int writeFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs);
-int appendToFile(FileDescriptor *fd, void *buf, uint64_t size, FileSystem *fs);
+int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs);
+int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
+int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 
 int readNFiles(int N, FileContainer **buf, FileSystem *fs);
 
@@ -56,12 +56,12 @@ int tryLockFile(FileDescriptor *fd, FileSystem *fs);
 
 int removeFile(FileDescriptor *fd, FileSystem *fs);
 
-uint64_t getSize(const char *pathname, FileSystem *fs);
-uint64_t getTrueSize(const char *pathname, FileSystem *fs);
+size_t getSize(const char *pathname, FileSystem *fs);
+size_t getTrueSize(const char *pathname, FileSystem *fs);
 
-uint64_t getCurSize(FileSystem *fs);
-uint64_t getCurN(FileSystem *fs);
+size_t getCurSize(FileSystem *fs);
+size_t getCurN(FileSystem *fs);
 
-int freeSpace(uint64_t size, FileContainer **buf, FileSystem *fs);
+int freeSpace(size_t size, FileContainer **buf, FileSystem *fs);
 
 #endif

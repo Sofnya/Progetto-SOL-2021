@@ -39,12 +39,18 @@
         perror("Error on a pthread call");                           \
         exit(EXIT_FAILURE);                                          \
     }
-#define READ_CHECK(arg)                \
-    if ((arg) <= 0)                    \
-    {                                  \
-        if (errno != 0)                \
-            perror("Error on a read"); \
-        return -1;                     \
+#define READ_CHECK(arg, expected)                                                \
+    {                                                                            \
+        ssize_t tmp;                                                             \
+        if ((tmp = (arg)) != (expected))                                         \
+        {                                                                        \
+            if (errno != 0)                                                      \
+            {                                                                    \
+                perror("Error on a read");                                       \
+            }                                                                    \
+            printf("Error on line:%d of file:%s\n", __LINE__, __FILE__);         \
+            printf("Expected to read:%ld, instead read:%ld\n", (expected), tmp); \
+        }                                                                        \
     }
 
 #define CLEANUP_ERROR_CHECK(arg, cleanup)                            \

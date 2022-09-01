@@ -24,16 +24,19 @@
 
 typedef struct _message
 {
-    uint64_t size;
+    size_t size;
     void *content;
     char *info;
     int type, status;
 } Message;
 
-int messageInit(uint64_t size, void *content, const char *info, int type, int status, Message *m);
+int messageInit(size_t size, void *content, const char *info, int type, int status, Message *m);
 void messageDestroy(Message *m);
 
 int sendMessage(int fd, Message *m);
 int receiveMessage(int fd, Message *m);
+
+int readWrapper(int fd, void *buf, size_t count);
+int writeWrapper(int fd, void *buf, size_t count);
 
 #endif

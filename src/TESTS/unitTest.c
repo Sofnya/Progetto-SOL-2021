@@ -358,7 +358,7 @@ int fileContainerTest()
     void *buf;
     void *content = "abcdefghijk";
     char *name = "fileName.txt", *name2 = "anotherFile.txt";
-    uint64_t size, n;
+    size_t size, n;
 
     assert(containerInit(5, content, name, &fc) == 0);
 

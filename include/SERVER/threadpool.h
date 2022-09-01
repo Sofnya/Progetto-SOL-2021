@@ -20,8 +20,8 @@ typedef struct _ThreadPool
     AtomicInt *alive;
     bool volatile _closed;
     bool volatile _terminate;
-    uint64_t _coreSize;
-    uint64_t _maxSize;
+    size_t _coreSize;
+    size_t _maxSize;
 } ThreadPool;
 
 struct _execLoopArgs
@@ -31,7 +31,7 @@ struct _execLoopArgs
     AtomicInt *alive;
 };
 
-void threadpoolInit(uint64_t coreSize, uint64_t maxSize, ThreadPool *pool);
+void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool);
 void threadpoolDestroy(ThreadPool *pool);
 
 void threadpoolClose(ThreadPool *pool);
@@ -49,6 +49,6 @@ void _threadCleanup(void *args);
 void _die(void *args);
 void _threadpoolKILL(ThreadPool *pool);
 
-uint64_t _min(uint64_t a, uint64_t b);
+size_t _min(size_t a, size_t b);
 
 #endif

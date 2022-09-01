@@ -54,7 +54,6 @@ int main(int argc, char *argv[])
     int *curFd;
     struct sockaddr_un sa;
 
-    signal(SIGTERM, &signalHandler);
     signal(SIGQUIT, &signalHandler);
     signal(SIGINT, &signalHandler);
     signal(SIGHUP, &signalHandler);
@@ -93,6 +92,7 @@ int main(int argc, char *argv[])
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
         SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
         *curFd = fdc;
+        printf("Got connection on %d\n", fdc);
         threadpoolSubmit(&handleConnection, curFd, &pool);
 
         // puts("Got connection!");
@@ -115,7 +115,7 @@ void handleConnection(void *fdc)
     int fd = *(int *)fdc;
     int err;
     args.fd = fd;
-
+    printf("Handling connection on %d\n", fd);
     bool done = false;
     free(fdc);
 
@@ -128,7 +128,7 @@ void handleConnection(void *fdc)
         {
             perror("Error on malloc");
             done = true;
-            continue;
+            break;
         }
 
         request->size = 0;
@@ -146,7 +146,7 @@ void handleConnection(void *fdc)
             done = true;
             messageDestroy(request);
             free(request);
-            continue;
+            break;
         }
 
         done = (request->type == MT_DISCONNECT);
@@ -166,7 +166,7 @@ void handleConnection(void *fdc)
             free(request);
             messageDestroy(response);
             free(response);
-            continue;
+            break;
         }
 
         messageDestroy(request);
@@ -200,7 +200,7 @@ Message *parseRequest(Message *request, ConnState state)
         FileContainer *fcs;
         int fcsSize = 0, i;
         void *buf;
-        uint64_t size;
+        size_t size;
 
         if (request->size == sizeof(int))
         {
@@ -259,7 +259,7 @@ Message *parseRequest(Message *request, ConnState state)
     case (MT_FREAD):
     {
         void *buf;
-        uint64_t size;
+        size_t size;
 
         size = getSize(request->info, state.fs);
         if (size == 0)
@@ -291,7 +291,7 @@ Message *parseRequest(Message *request, ConnState state)
         FileContainer *fcs;
         int fcsSize = 0, i;
         void *buf;
-        uint64_t size;
+        size_t size;
 
         if (conn_writeFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
@@ -327,7 +327,7 @@ Message *parseRequest(Message *request, ConnState state)
         FileContainer *fcs;
         int fcsSize = 0, i;
         void *buf;
-        uint64_t size;
+        size_t size;
 
         if (conn_appendFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
@@ -408,7 +408,7 @@ Message *parseRequest(Message *request, ConnState state)
         FileContainer *fc;
         void *buf = NULL;
         int amount, i, n;
-        uint64_t size;
+        size_t size;
         char info[200];
 
         n = *(int *)request->content;
@@ -416,9 +416,9 @@ Message *parseRequest(Message *request, ConnState state)
 
         if (amount > 0)
         {
-            serializeContainerArray(fc, amount, &size, &buf);
+            SAFE_ERROR_CHECK(serializeContainerArray(fc, amount, &size, &buf));
             sprintf(info, "READN:%d", amount);
-            messageInit(size, buf, info, MT_INFO, MS_OK, response);
+            SAFE_ERROR_CHECK(messageInit(size, buf, info, MT_INFO, MS_OK, response));
             for (i = 0; i < amount; i++)
             {
                 destroyContainer(&fc[i]);
@@ -506,6 +506,7 @@ void logRequest(Message *request, ConnState state)
         }
         case (MT_FCLOSE):
         {
+            puts("\nClosing!!");
             sprintf(parsed, ">CLOSE >UUID:%s >%s", state.uuid, request->info);
             break;
         }

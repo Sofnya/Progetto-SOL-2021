@@ -7,10 +7,10 @@
 
 char SOCK_NAME[UNIX_PATH_MAX] = "default_address";
 char LOG_FILE[UNIX_PATH_MAX] = "log";
-uint64_t CORE_POOL_SIZE = 8;
-uint64_t MAX_POOL_SIZE = UINT64_MAX;
-uint64_t MAX_FILES = 100;
-uint64_t MAX_MEMORY = 100 * 1024 * 1024;
+int64_t CORE_POOL_SIZE = 8;
+int64_t MAX_POOL_SIZE = UINT64_MAX;
+int64_t MAX_FILES = 100;
+int64_t MAX_MEMORY = 100 * 1024 * 1024;
 int ENABLE_COMPRESSION = 1;
 int VERBOSE_PRINT = 0;
 

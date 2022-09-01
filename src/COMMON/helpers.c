@@ -3,10 +3,8 @@
 #include <errno.h>
 #include <stdio.h>
 
-
 #include "COMMON/helpers.h"
 #include "COMMON/macros.h"
-
 
 int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait)
 {
@@ -25,7 +23,6 @@ int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait)
     exec.isDone = &isDone;
     exec.result = &result;
 
-
     PTHREAD_CHECK(pthread_mutex_lock(&mtx));
 
     clock_gettime(CLOCK_REALTIME, &absTime);
@@ -34,14 +31,13 @@ int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait)
 
     PTHREAD_CHECK(pthread_create(&pid, NULL, _innerCall, (void *)&exec));
 
-
-    while(!isDone)
+    while (!isDone)
     {
         err = pthread_cond_timedwait(&done, &mtx, &absTime);
     }
     PTHREAD_CHECK(pthread_mutex_unlock(&mtx));
 
-    if(err) 
+    if (err)
     {
         pthread_cancel(pid);
         PTHREAD_CHECK(pthread_join(pid, NULL));
@@ -54,10 +50,9 @@ int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait)
     return *(exec.result);
 }
 
-
 void *_innerCall(void *arg)
-{   
-    struct _Hexec exec = * (struct _Hexec *)arg;
+{
+    struct _Hexec exec = *(struct _Hexec *)arg;
 
     PTHREAD_CHECK(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL));
 

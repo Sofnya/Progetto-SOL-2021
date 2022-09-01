@@ -6,7 +6,7 @@
 #include "COMMON/fileContainer.h"
 
 void __mkdir(char *path);
-void __writeBufToDir(void *buf, uint64_t size, const char *fileName, const char *dirname);
-void __writeToDir(FileContainer *fc, uint64_t size, const char *dirname);
+void __writeBufToDir(void *buf, size_t size, const char *fileName, const char *dirname);
+void __writeToDir(FileContainer *fc, size_t size, const char *dirname);
 
 #endif

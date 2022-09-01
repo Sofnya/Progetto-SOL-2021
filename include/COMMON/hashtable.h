@@ -21,7 +21,7 @@ struct _entry
 
 typedef struct _HashTable
 {
-    uint64_t size;
+    size_t size;
     struct _row *_table;
 } HashTable;
 
@@ -33,7 +33,7 @@ void _rowDestroy(struct _row row);
 
 int _rowPop(struct _entry *el, struct _row row);
 
-int hashTableInit(uint64_t size, HashTable *table);
+int hashTableInit(size_t size, HashTable *table);
 void hashTableDestroy(HashTable *table);
 int hashTableGet(const char *key, void **value, HashTable table);
 int hashTableRemove(const char *key, void **value, HashTable table);
@@ -41,7 +41,7 @@ int hashTablePut(char *key, void *value, HashTable table);
 int hashTablePop(char **key, void **value, HashTable table);
 long long hashTableSize(HashTable table);
 
-uint64_t _getLoc(const char *key, uint64_t size);
+size_t _getLoc(const char *key, size_t size);
 
 void _printRow(struct _row row);
 void printHashTable(HashTable table);

@@ -54,7 +54,7 @@ void fileDestroy(File *file)
  * @param file the file to be modified.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int fileWrite(const void *content, uint64_t size, File *file)
+int fileWrite(const void *content, size_t size, File *file)
 {
     file->size = size;
 
@@ -87,7 +87,7 @@ int fileWrite(const void *content, uint64_t size, File *file)
  * @param file the file to be modified.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int fileAppend(const void *content, uint64_t size, File *file)
+int fileAppend(const void *content, size_t size, File *file)
 {
     int shouldCompress = file->isCompressed;
     if (file->isCompressed)
@@ -115,9 +115,9 @@ int fileAppend(const void *content, uint64_t size, File *file)
  * @param file the file to be read.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
-int fileRead(void *buf, uint64_t bufsize, File *file)
+int fileRead(void *buf, size_t bufsize, File *file)
 {
-    uint64_t n;
+    size_t n;
     if (file->isCompressed)
     {
         return uncompress(buf, &bufsize, file->content, file->compressedSize);
@@ -257,9 +257,9 @@ int fileDecompress(File *file)
  * @brief Get the File's size.
  *
  * @param file
- * @return uint64_t
+ * @return size_t
  */
-uint64_t getFileSize(File *file)
+size_t getFileSize(File *file)
 {
     return file->size;
 }
@@ -268,9 +268,9 @@ uint64_t getFileSize(File *file)
  * @brief Get the File's contents true memory occupation. If file is not compressed then this is equal to getFileSize, otherwise it will return the commpressed size of the file's contents.
  *
  * @param file
- * @return uint64_t
+ * @return size_t
  */
-uint64_t getFileTrueSize(File *file)
+size_t getFileTrueSize(File *file)
 {
     if (file->isCompressed)
         return file->compressedSize;

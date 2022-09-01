@@ -236,7 +236,7 @@ int _rowPop(struct _entry *el, struct _row row)
  * @param table the table to be initialized.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int hashTableInit(uint64_t size, HashTable *table)
+int hashTableInit(size_t size, HashTable *table)
 {
     int i;
 
@@ -282,7 +282,7 @@ void hashTableDestroy(HashTable *table)
  */
 int hashTableGet(const char *key, void **value, HashTable table)
 {
-    uint64_t loc;
+    size_t loc;
     struct _entry entry;
 
     loc = _getLoc(key, table.size);
@@ -310,7 +310,7 @@ int hashTableGet(const char *key, void **value, HashTable table)
 int hashTableRemove(const char *key, void **value, HashTable table)
 {
 
-    uint64_t loc;
+    size_t loc;
     struct _entry entry;
 
     loc = _getLoc(key, table.size);
@@ -340,7 +340,7 @@ int hashTableRemove(const char *key, void **value, HashTable table)
  */
 int hashTablePut(char *key, void *value, HashTable table)
 {
-    uint64_t loc;
+    size_t loc;
     struct _entry entry;
 
     loc = _getLoc(key, table.size);
@@ -388,7 +388,7 @@ int hashTablePop(char **key, void **value, HashTable table)
  * @brief Gets the number of elements currently stored in table, roughly.
  *
  * @param table the HashTable to query.
- * @return uint64_t the number of elements currently stored in table.
+ * @return size_t the number of elements currently stored in table.
  */
 long long hashTableSize(HashTable table)
 {
@@ -407,11 +407,11 @@ long long hashTableSize(HashTable table)
  *
  * @param key the key to be hashed.
  * @param size the size of the table.
- * @return uint64_t the index inside of which the key should be.
+ * @return size_t the index inside of which the key should be.
  */
-uint64_t _getLoc(const char *key, uint64_t size)
+size_t _getLoc(const char *key, size_t size)
 {
-    uint64_t hash[2];
+    size_t hash[2];
     MurmurHash3_x64_128(key, strlen(key), SEED, hash);
 
     return hash[0] % size;

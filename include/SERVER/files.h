@@ -8,8 +8,8 @@ typedef struct _file
 {
     char *name;
     void *content;
-    uint64_t size;
-    uint64_t compressedSize;
+    size_t size;
+    size_t compressedSize;
     int isCompressed;
     pthread_mutex_t *mtx;
 } File;
@@ -17,10 +17,10 @@ typedef struct _file
 int fileInit(const char *name, int isCompressed, File *file);
 void fileDestroy(File *file);
 
-int fileWrite(const void *content, uint64_t size, File *file);
-int fileAppend(const void *content, uint64_t size, File *file);
+int fileWrite(const void *content, size_t size, File *file);
+int fileAppend(const void *content, size_t size, File *file);
 
-int fileRead(void *buf, uint64_t bufsize, File *file);
+int fileRead(void *buf, size_t bufsize, File *file);
 
 int fileTryLock(File *file);
 int fileLock(File *file);
@@ -29,8 +29,8 @@ int fileUnlock(File *file);
 int fileCompress(File *file);
 int fileDecompress(File *file);
 
-uint64_t getFileSize(File *file);
-uint64_t getFileTrueSize(File *file);
+size_t getFileSize(File *file);
+size_t getFileTrueSize(File *file);
 const char *getFileName(File *file);
 
 #endif
