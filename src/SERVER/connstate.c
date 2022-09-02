@@ -29,6 +29,8 @@ void connStateDestroy(ConnState *state)
             unlockFile(fd, state->fs);
         }
         free(key);
+
+        fdDestroy(fd);
         free(fd);
     }
 
@@ -59,7 +61,6 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         if (*fcsSize == -1)
         {
             perror("Error on freeSpace");
-            free(fcs);
             return -1;
         }
     }
@@ -208,6 +209,8 @@ int conn_removeFile(const char *path, ConnState state)
     {
         unlockFile(fd, state.fs);
     }
+
+    fdDestroy(fd);
     free(fd);
     return tmp;
 }

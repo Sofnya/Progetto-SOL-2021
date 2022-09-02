@@ -45,7 +45,16 @@ int _sendMessageWrapper(void *args);
 void signalHandler(int signum)
 {
     logger("Exiting", "STATUS");
-    exit(EXIT_FAILURE);
+
+    if (signum == SIGHUP)
+    {
+        threadpoolCleanExit(&pool);
+    }
+    else if (signum == SIGQUIT || signum == SIGINT)
+    {
+        threadpoolFastExit(&pool);
+    }
+    exit(EXIT_SUCCESS);
 }
 
 int main(int argc, char *argv[])
@@ -197,7 +206,7 @@ Message *parseRequest(Message *request, ConnState state)
     case (MT_FOPEN):
     {
         int flags;
-        FileContainer *fcs;
+        FileContainer *fcs = NULL;
         int fcsSize = 0, i;
         void *buf;
         size_t size;
@@ -207,9 +216,17 @@ Message *parseRequest(Message *request, ConnState state)
             flags = *((int *)(request->content));
             if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
-                if (flags &= O_CREATE)
+                if ((flags & O_CREATE) && (flags & O_LOCK))
+                {
+                    messageInit(0, NULL, "OPEN|CREATE|LOCK", MT_INFO, MS_OK, response);
+                }
+                else if (flags & O_CREATE)
                 {
                     messageInit(0, NULL, "OPEN|CREATE", MT_INFO, MS_OK, response);
+                }
+                else if (flags & O_LOCK)
+                {
+                    messageInit(0, NULL, "OPEN|LOCK", MT_INFO, MS_OK, response);
                 }
                 else
                 {
@@ -228,16 +245,18 @@ Message *parseRequest(Message *request, ConnState state)
                     perror("Something went wrong while serializing a container array...");
                     messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
                 }
-
+            }
+            else
+            {
+                messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+            }
+            if (fcs != NULL)
+            {
                 for (i = 0; i < fcsSize; i++)
                 {
                     destroyContainer(fcs + i);
                 }
                 free(fcs);
-            }
-            else
-            {
-                messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
             }
             return response;
         }
@@ -288,7 +307,7 @@ Message *parseRequest(Message *request, ConnState state)
 
     case (MT_FWRITE):
     {
-        FileContainer *fcs;
+        FileContainer *fcs = NULL;
         int fcsSize = 0, i;
         void *buf;
         size_t size;
@@ -309,22 +328,25 @@ Message *parseRequest(Message *request, ConnState state)
                 perror("Something went wrong while serializing a container array...");
                 messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
             }
+        }
+        else
+        {
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+        }
+        if (fcs != NULL)
+        {
             for (i = 0; i < fcsSize; i++)
             {
                 destroyContainer(fcs + i);
             }
             free(fcs);
         }
-        else
-        {
-            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
-        }
         return response;
     }
 
     case (MT_FAPPEND):
     {
-        FileContainer *fcs;
+        FileContainer *fcs = NULL;
         int fcsSize = 0, i;
         void *buf;
         size_t size;
@@ -345,15 +367,19 @@ Message *parseRequest(Message *request, ConnState state)
                 perror("Something went wrong while serializing a container array...");
                 messageInit(0, NULL, "ERROR|CAPMISS", MT_INFO, MS_ERR, response);
             }
+        }
+        else
+        {
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+        }
+
+        if (fcs != NULL)
+        {
             for (i = 0; i < fcsSize; i++)
             {
                 destroyContainer(fcs + i);
             }
             free(fcs);
-        }
-        else
-        {
-            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
         }
         return response;
     }
@@ -447,7 +473,6 @@ void cleanup(void)
     logger("Cleaning up!", "STATUS");
     close(sfd);
     unlink(SOCK_NAME);
-    threadpoolCleanExit(&pool);
 
     threadpoolDestroy(&pool);
 
@@ -506,7 +531,6 @@ void logRequest(Message *request, ConnState state)
         }
         case (MT_FCLOSE):
         {
-            puts("\nClosing!!");
             sprintf(parsed, ">CLOSE >UUID:%s >%s", state.uuid, request->info);
             break;
         }

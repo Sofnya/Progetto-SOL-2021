@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <pthread.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -19,6 +21,12 @@ void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
     UNSAFE_NULL_CHECK(pool->_queue = malloc(sizeof(SyncQueue)));
     syncqueueInit(pool->_queue);
 
+    UNSAFE_NULL_CHECK(pool->_pids = malloc(sizeof(List)));
+    listInit(pool->_pids);
+
+    UNSAFE_NULL_CHECK(pool->_pidsmtx = malloc(sizeof(pthread_mutex_t)));
+    PTHREAD_CHECK(pthread_mutex_init(pool->_pidsmtx, NULL));
+
     pool->_closed = false;
     pool->_terminate = false;
 
@@ -28,6 +36,7 @@ void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
 void threadpoolDestroy(ThreadPool *pool)
 {
     struct _exec *cur;
+    void *el;
 
     logger("Destroying threadpool!", "STATUS");
     while (syncqueueLen(*pool->_queue) > 0)
@@ -37,8 +46,20 @@ void threadpoolDestroy(ThreadPool *pool)
     }
     syncqueueDestroy(pool->_queue);
     atomicDestroy(pool->alive);
+
+    while (listSize(*pool->_pids) > 0)
+    {
+        listPop(&el, pool->_pids);
+        free(el);
+    }
+    listDestroy(pool->_pids);
+
+    PTHREAD_CHECK(pthread_mutex_destroy(pool->_pidsmtx));
+
     free(pool->_queue);
     free(pool->alive);
+    free(pool->_pids);
+    free(pool->_pidsmtx);
 }
 
 void threadpoolClose(ThreadPool *pool)
@@ -53,15 +74,67 @@ void threadpoolTerminate(ThreadPool *pool)
 
 void threadpoolCleanExit(ThreadPool *pool)
 {
+    struct timespec abstime;
+
     threadpoolClose(pool);
     while (syncqueueLen(*pool->_queue) > 0)
     {
     }
     threadpoolTerminate(pool);
 
+    timespec_get(&abstime, TIME_UTC);
+    abstime.tv_sec += 10;
     logger("Joining manager...", "STATUS");
-    PTHREAD_CHECK(pthread_join(pool->_manager, NULL));
+    printf("Calling pthread_join from PID:%d and PTHREAD:%ld on PTHREAD:%ld\n", getpid(), pthread_self(), pool->_manager);
+    PTHREAD_CHECK(pthread_timedjoin_np(pool->_manager, NULL, &abstime));
     logger("Manager joined!", "STATUS");
+}
+
+void threadpoolFastExit(ThreadPool *pool)
+{
+    int i;
+    threadpoolClose(pool);
+    threadpoolTerminate(pool);
+    syncqueueClose(pool->_queue);
+
+    // Waits for up to 5 seconds for all threads to terminate.
+    for (i = 0; i < 500; i++)
+    {
+        if (atomicGet(pool->alive) == 0)
+        {
+            break;
+        }
+
+        // 10ms sleep done 500 times is 5s
+        usleep(10000);
+    }
+    // Otherwise cancel them.
+    threadpoolCancel(pool);
+
+    logger("FastExit done", "STATUS");
+}
+
+void threadpoolCancel(ThreadPool *pool)
+{
+    void *el;
+    pthread_t *pid;
+    char log[500];
+
+    printf("Canceling, alive:%ld\n", atomicGet(pool->alive));
+    printf("ListSize:%d\n", listSize(*pool->_pids));
+    printList(pool->_pids);
+
+    PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
+    while (listSize(*pool->_pids) > 0)
+    {
+        listPop(&el, pool->_pids);
+        pid = (pthread_t *)el;
+        sprintf(log, ">Canceling:%ld", *pid);
+        logger(log, "THREADPOOL");
+        pthread_cancel(*pid);
+        free(el);
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
 }
 
 int threadpoolSubmit(void (*fnc)(void *), void *arg, ThreadPool *pool)
@@ -86,15 +159,22 @@ int threadpoolSubmit(void (*fnc)(void *), void *arg, ThreadPool *pool)
 int _spawnThread(ThreadPool *pool)
 {
     struct _execLoopArgs *curArgs;
-    pthread_t pid;
+    pthread_t *pid;
 
+    SAFE_NULL_CHECK(pid = malloc(sizeof(pthread_t)));
     SAFE_NULL_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
     curArgs->queue = pool->_queue;
     curArgs->terminate = &(pool->_terminate);
     curArgs->alive = pool->alive;
+    curArgs->pids = pool->_pids;
+    curArgs->pidsmtx = pool->_pidsmtx;
 
-    PTHREAD_CHECK(pthread_create(&pid, NULL, _execLoop, (void *)curArgs));
-    PTHREAD_CHECK(pthread_detach(pid));
+    PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
+
+    PTHREAD_CHECK(pthread_create(pid, NULL, _execLoop, (void *)curArgs));
+
+    listAppend((void *)pid, pool->_pids);
+    PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
 
     return 1;
 }
@@ -108,11 +188,18 @@ void *_execLoop(void *args)
     bool volatile *terminate = ((struct _execLoopArgs *)args)->terminate;
     SyncQueue *queue = ((struct _execLoopArgs *)args)->queue;
     AtomicInt *alive = ((struct _execLoopArgs *)args)->alive;
+    struct _cleanup *cln;
+    SAFE_NULL_CHECK(cln = malloc(sizeof(struct _cleanup)));
 
+    cln->alive = alive;
+    cln->pids = ((struct _execLoopArgs *)args)->pids;
+    cln->pidsmtx = ((struct _execLoopArgs *)args)->pidsmtx;
     free(args);
 
     atomicInc(1, alive);
-    pthread_cleanup_push(&_threadCleanup, (void *)alive);
+    pthread_cleanup_push(&_threadCleanup, (void *)cln);
+
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
     while (!(*terminate))
     {
@@ -139,8 +226,10 @@ void *_manage(void *args)
 {
     ThreadPool *pool = (ThreadPool *)args;
     size_t curSize;
+    size_t lastSize = 0;
     struct _exec *task;
     size_t i;
+    char log[500];
 
     while (!pool->_terminate)
     {
@@ -150,6 +239,12 @@ void *_manage(void *args)
         puts("Running a round of threadpool management:");
         printf("There are %ld alive threads.", curSize);
 #endif
+        if (curSize != lastSize)
+        {
+            sprintf(log, ">Alive:%ld", curSize);
+            logger(log, "THREADPOOL");
+            lastSize = curSize;
+        }
         if (curSize < pool->_coreSize)
         {
             size_t threadsToSpawn = pool->_coreSize - curSize;
@@ -157,9 +252,9 @@ void *_manage(void *args)
             {
                 _spawnThread(pool);
             }
-#ifdef TP_DEBUG
-            printf("Spawned %ld threads to get to coresize...\n", threadsToSpawn);
-#endif
+
+            sprintf(log, ">Spawned:%ld", threadsToSpawn);
+            logger(log, "THREADPOOL");
         }
 
         if (pool->_queue->_len == 0 && curSize > pool->_coreSize)
@@ -168,6 +263,7 @@ void *_manage(void *args)
             task->fnc = &_die;
             task->arg = NULL;
             syncqueuePush(task, pool->_queue);
+            logger(">Killed:1", "THREADPOOL");
 #ifdef TP_DEBUG
             puts("Killed a thread.");
 #endif
@@ -179,6 +275,9 @@ void *_manage(void *args)
             {
                 _spawnThread(pool);
             }
+
+            sprintf(log, ">Spawned:%ld", threadsToSpawn);
+            logger(log, "THREADPOOL");
 #ifdef TP_DEBUG
             printf("Spawned %ld threads.\n", threadsToSpawn);
 #endif
@@ -186,7 +285,7 @@ void *_manage(void *args)
 #ifdef TP_DEBUG
         puts("Done with round of management.");
 #endif
-        usleep(1000);
+        usleep(10000);
     }
 
     _threadpoolKILL(pool);
@@ -203,18 +302,51 @@ void *_manage(void *args)
 
 void _threadCleanup(void *args)
 {
-#ifdef TP_DEBUG
-    puts("Thread cleaning up!");
-#endif
-    AtomicInt *alive = (AtomicInt *)args;
+    struct _cleanup *cln = (struct _cleanup *)args;
+
+    AtomicInt *alive = cln->alive;
+    List *pids = cln->pids;
+    pthread_mutex_t *poolmtx = cln->pidsmtx;
+    pthread_t mine, *el;
+    void *saveptr = NULL;
+    int i = 0, found = 0;
+
+    PTHREAD_CHECK(pthread_mutex_lock(poolmtx));
+    mine = pthread_self();
+
+    while (listScan((void **)&el, &saveptr, pids) == 0)
+    {
+        if (*el == mine)
+        {
+            found = 1;
+            listRemove(i, (void **)&el, pids);
+            free(el);
+            break;
+        }
+        i++;
+    }
+    if (errno == EOF)
+    {
+        if (*el == mine)
+        {
+            found = 1;
+            listRemove(i, (void **)&el, pids);
+            free(el);
+        }
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(poolmtx));
+
     atomicDec(1, alive);
+    if (!found)
+    {
+        puts("\n\n------------\nWARNING: NOT FOUND!!\n-----------\n");
+    }
+    free(cln);
+    PTHREAD_CHECK(pthread_detach(mine));
 }
 
 void _die(void *args)
 {
-#ifdef TP_DEBUG
-    puts("Dying!");
-#endif
     pthread_exit(NULL);
 }
 
@@ -242,6 +374,7 @@ void _threadpoolKILL(ThreadPool *pool)
     for (i = atomicGet(pool->alive); i > 0; i--)
     {
         UNSAFE_NULL_CHECK(task = malloc(sizeof(struct _exec)));
+
         task->fnc = &_die;
         task->arg = NULL;
         syncqueuePush(task, pool->_queue);

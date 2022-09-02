@@ -196,7 +196,9 @@ int readWrapper(int fd, void *buf, size_t count)
         tmp = read(fd, buf + curLoc, count - curLoc);
         if (tmp <= 0)
         {
+#ifdef DEBUG
             printf("Error when reading; err:%ld, Expected to read:%ld, Actually read:%ld\n", tmp, count, curLoc);
+#endif
             return -1;
         }
         curLoc += tmp;
@@ -222,7 +224,9 @@ int writeWrapper(int fd, void *buf, size_t count)
         tmp = write(fd, buf + curLoc, count - curLoc);
         if (tmp <= 0)
         {
+#ifdef DEBUG
             printf("Error when writing; err:%ld, Expected to write:%ld, Actually wrote:%ld\n", tmp, count, curLoc);
+#endif
             return -1;
         }
         curLoc += tmp;

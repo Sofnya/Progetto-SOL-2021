@@ -33,13 +33,16 @@ typedef struct _filesystem
 
 typedef struct _fileDescriptor
 {
-    const char *name;
+    char *name;
     pid_t pid;
     int flags;
 } FileDescriptor;
 
 int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
+
+int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd);
+void fdDestroy(FileDescriptor *fd);
 
 int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);

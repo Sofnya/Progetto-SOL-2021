@@ -128,6 +128,7 @@ void fsDestroy(FileSystem *fs)
         listPop((void **)&cur, fs->filesList);
         if (hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
         {
+            fileLock(curFile);
             fileDestroy(curFile);
             free(curFile);
         }
@@ -147,6 +148,25 @@ void fsDestroy(FileSystem *fs)
     free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
+}
+
+int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd)
+{
+    size_t nameLen = strlen(name) + 1;
+
+    fd->pid = pid;
+    fd->flags = flags;
+    SAFE_NULL_CHECK(fd->name = malloc(nameLen * sizeof(char)));
+
+    strcpy(fd->name, name);
+
+    return 0;
+}
+
+void fdDestroy(FileDescriptor *fd)
+{
+    free(fd->name);
+    fd->name = NULL;
 }
 
 /**
@@ -226,9 +246,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         PTHREAD_CHECK(LISTUNLOCK);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
-        newFd->name = file->name;
-        newFd->pid = getpid();
-        newFd->flags = FI_READ | FI_WRITE | FI_APPEND;
+        fdInit(file->name, getpid(), FI_READ | FI_WRITE | FI_APPEND, newFd);
     }
     else
     {
@@ -242,15 +260,13 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         }
 
         CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
-        newFd->name = file->name;
-        newFd->pid = getpid();
-        newFd->flags = FI_READ | FI_APPEND;
+        fdInit(file->name, getpid(), FI_READ | FI_APPEND, newFd);
         PTHREAD_CHECK(UNLOCK);
     }
 
     if (flags & O_LOCK)
     {
-        CLEANUP_ERROR_CHECK(lockFile(newFd, fs), { free(newFd); });
+        CLEANUP_ERROR_CHECK(lockFile(newFd, fs), { fdDestroy(newFd); free(newFd); });
     }
     *fd = newFd;
 
@@ -263,6 +279,8 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
     {
         unlockFile(fd, fs);
     }
+
+    fdDestroy(fd);
     free(fd);
     return 0;
 }
@@ -448,6 +466,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
+    int tmp;
     if (fd->flags & FI_LOCK)
     {
         errno = EINVAL;
@@ -459,7 +478,11 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
     PTHREAD_CHECK(UNLOCK);
-    fileLock(file);
+    tmp = fileLock(file);
+    if (tmp != 0)
+    {
+        return tmp;
+    }
 
     fd->flags |= FI_LOCK;
     return 0;
@@ -526,7 +549,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     char *name;
     int i;
 
-    if (!((fd->flags & FI_LOCK)))
+    if (!(fd->flags & FI_LOCK))
     {
         errno = EINVAL;
         return -1;
@@ -571,7 +594,6 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     atomicDec(getFileTrueSize(file), fs->curSize);
     atomicDec(1, fs->curN);
 
-    fileUnlock(file);
     fileDestroy(file);
     free(file);
 
@@ -713,6 +735,8 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
 
         CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { LISTUNLOCK; });
         CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { LISTUNLOCK; });
+
+        fdDestroy(curFd);
         free(curFd);
 
         toFree -= tmpTrueSize;

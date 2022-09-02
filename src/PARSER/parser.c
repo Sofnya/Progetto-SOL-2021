@@ -59,6 +59,10 @@ Stats parse(const char *path)
     stats.nRequests = 0;
     stats.nResponse = 0;
 
+    stats.maxThreads = 0;
+    stats.threadsSpawned = 0;
+    stats.threadsKilled = 0;
+
     while (getline(&line, &len, logFile) != -1)
     {
         lineN++;
@@ -224,6 +228,32 @@ Stats parse(const char *path)
             stats.missRemoved += tmp2;
             stats.missN++;
         }
+        else if (!strncmp(value, "[THREADPOOL", 11))
+        {
+            value1 = strtok_r(value, ">", &innersaveptr);
+            type = strtok_r(NULL, ">", &innersaveptr);
+
+            value1 = strtok_r(type, ":", &innersaveptr);
+            value1 = strtok_r(NULL, ":", &innersaveptr);
+
+            tmp1 = atoll(value1);
+
+            if (!strncmp(type, "Alive", 5))
+            {
+                if (tmp1 > stats.maxThreads)
+                {
+                    stats.maxThreads = tmp1;
+                }
+            }
+            else if (!strncmp(type, "Spawned", 7))
+            {
+                stats.threadsSpawned += tmp1;
+            }
+            else if (!strncmp(type, "Killed", 6))
+            {
+                stats.threadsKilled += tmp1;
+            }
+        }
         else
         {
             printf("Unsupported option %s at line %d, ignoring.\n", value, lineN);
@@ -263,4 +293,9 @@ void printStats(Stats stats)
     printf("Maximum number of files:%lld\n", stats.maxN);
     printf("Space saved through compression:%lld\n", stats.spaceSaved);
     printf("Number of capacity misses:%lld\tNumber of files removed to free space:%lld\n", stats.missN, stats.missRemoved);
+
+    printf("\nThreadPool data:\n");
+    printf("Maximum number of threads:%lld\n", stats.maxThreads);
+    printf("Number of threads killed:%lld\n", stats.threadsKilled);
+    printf("Number of threads spawned:%lld\n", stats.threadsSpawned);
 }

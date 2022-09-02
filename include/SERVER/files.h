@@ -10,8 +10,14 @@ typedef struct _file
     void *content;
     size_t size;
     size_t compressedSize;
-    int isCompressed;
+    volatile int isCompressed;
     pthread_mutex_t *mtx;
+
+    volatile int isDestroyed;
+    volatile int isLocked;
+    volatile int waitingThreads;
+    pthread_mutex_t *waitingLock;
+    pthread_cond_t *wake;
 } File;
 
 int fileInit(const char *name, int isCompressed, File *file);

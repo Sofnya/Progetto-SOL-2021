@@ -26,8 +26,17 @@ int fileInit(const char *name, int isCompressed, File *file)
     file->compressedSize = 0;
     file->isCompressed = isCompressed;
     file->content = NULL;
+
+    file->isDestroyed = 0;
+    file->isLocked = 0;
+    file->waitingThreads = 0;
+
     SAFE_NULL_CHECK(file->mtx = malloc(sizeof(pthread_mutex_t)));
+    SAFE_NULL_CHECK(file->waitingLock = malloc(sizeof(pthread_mutex_t)));
+    SAFE_NULL_CHECK(file->wake = malloc(sizeof(pthread_cond_t)));
     PTHREAD_CHECK(pthread_mutex_init(file->mtx, NULL));
+    PTHREAD_CHECK(pthread_mutex_init(file->waitingLock, NULL));
+    PTHREAD_CHECK(pthread_cond_init(file->wake, NULL));
 
     return 0;
 }
@@ -39,11 +48,24 @@ int fileInit(const char *name, int isCompressed, File *file)
  */
 void fileDestroy(File *file)
 {
+    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+    file->isDestroyed = 1;
+    while (file->waitingThreads > 0)
+    {
+        PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
+        PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
     free((void *)file->name);
     free(file->content);
 
+    PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
     PTHREAD_CHECK(pthread_mutex_destroy(file->mtx));
+    PTHREAD_CHECK(pthread_mutex_destroy(file->waitingLock));
+    PTHREAD_CHECK(pthread_cond_destroy(file->wake));
     free(file->mtx);
+    free(file->waitingLock);
+    free(file->wake);
 }
 
 /**
@@ -142,8 +164,15 @@ int fileRead(void *buf, size_t bufsize, File *file)
 int fileTryLock(File *file)
 {
     int res;
+    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
 
     res = pthread_mutex_trylock(file->mtx);
+    if (res == 0)
+    {
+        file->isLocked = 1;
+    }
+
+    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
     if (res != 0)
     {
         errno = res;
@@ -160,7 +189,27 @@ int fileTryLock(File *file)
  */
 int fileLock(File *file)
 {
+    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+
+    file->waitingThreads++;
+    while (!file->isDestroyed && file->isLocked)
+    {
+        PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
+    }
+    if (file->isDestroyed)
+    {
+        file->waitingThreads--;
+        PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
+        PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+        return -1;
+    }
+
     PTHREAD_CHECK(pthread_mutex_lock(file->mtx));
+    file->isLocked = 1;
+    file->waitingThreads--;
+
+    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+
     return 0;
 }
 
@@ -172,7 +221,12 @@ int fileLock(File *file)
  */
 int fileUnlock(File *file)
 {
+    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+    PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
     PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
+
+    file->isLocked = 0;
+    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
     return 0;
 }
 

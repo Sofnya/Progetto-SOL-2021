@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
                     {
                         if (verbose)
                         {
-                            printf("COuldn't open file %s for removal.\n", tmp);
+                            printf("Couldn't open file %s for removal.\n", tmp);
                         }
                         continue;
                     }

@@ -14,6 +14,7 @@ typedef struct _stats
     long long maxConn;
     long long spaceSaved;
     long long nRequests, nResponse;
+    long long maxThreads, threadsSpawned, threadsKilled;
 } Stats;
 
 Stats parse(const char *path);

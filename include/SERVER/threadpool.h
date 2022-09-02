@@ -22,6 +22,8 @@ typedef struct _ThreadPool
     bool volatile _terminate;
     size_t _coreSize;
     size_t _maxSize;
+    List *_pids;
+    pthread_mutex_t *_pidsmtx;
 } ThreadPool;
 
 struct _execLoopArgs
@@ -29,6 +31,15 @@ struct _execLoopArgs
     SyncQueue *queue;
     bool volatile *terminate;
     AtomicInt *alive;
+    List *pids;
+    pthread_mutex_t *pidsmtx;
+};
+
+struct _cleanup
+{
+    AtomicInt *alive;
+    List *pids;
+    pthread_mutex_t *pidsmtx;
 };
 
 void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool);
@@ -38,6 +49,8 @@ void threadpoolClose(ThreadPool *pool);
 
 void threadpoolTerminate(ThreadPool *pool);
 void threadpoolCleanExit(ThreadPool *pool);
+void threadpoolFastExit(ThreadPool *pool);
+void threadpoolCancel(ThreadPool *pool);
 
 int threadpoolSubmit(void (*fnc)(void *), void *arg, ThreadPool *pool);
 
