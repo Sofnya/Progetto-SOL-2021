@@ -29,6 +29,11 @@ void test(void *par)
     return;
 }
 
+int testHeuristic(void *arg)
+{
+    return (int)arg;
+}
+
 int threadpoolTest()
 {
     ThreadPool pool;
@@ -224,6 +229,20 @@ int listTest()
     }
 
     listDestroy(&list2);
+
+    puts("Sorting test!");
+    int size = rand() % 100;
+    listInit(&list);
+    for (i = 0; i < size; i++)
+    {
+        listPush((void *)(rand() % 100), &list);
+    }
+    printList(&list);
+    puts("\nNow sorting it!\n");
+    listSort(&list, &testHeuristic);
+    printList(&list);
+    puts("\nAll done!");
+
     return 0;
 }
 
@@ -346,6 +365,7 @@ int filesTest()
     assert(!strcmp("abcdeabcde", tmp));
 
     free(tmp);
+    fileLock(file1);
     fileDestroy(file1);
     free(file1);
 

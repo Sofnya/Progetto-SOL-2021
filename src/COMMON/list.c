@@ -204,6 +204,12 @@ int listPut(long long pos, void *el, List *list)
     new->prev = cur;
     new->next = cur->next;
     cur->next = new;
+    new->next->prev = new;
+
+    if (new->next == NULL)
+    {
+        list->_tail = new;
+    }
 
     list->size++;
 
@@ -397,6 +403,7 @@ void printList(List *list)
 {
     void *saveptr = NULL;
     void *el;
+    int i = 0;
 
     if (listSize(*list) == 0)
         return;
@@ -405,6 +412,50 @@ void printList(List *list)
     {
         printf("|%p|", el);
         printf("->");
+        i++;
     }
-    printf("|%p|", el);
+    printf("|%p|\n", el);
+}
+
+int listSort(List *list, int (*heuristic)(void *))
+{
+    size_t sortedPos = 1;
+    void *saveptr = NULL;
+    void *curEl;
+    void *prevEl;
+    int curVal;
+    int i;
+
+    if (listSize(*list) <= 1)
+        return 0;
+
+    while (sortedPos < listSize(*list))
+    {
+        SAFE_ERROR_CHECK(listGet(sortedPos - 1, &prevEl, list));
+        SAFE_ERROR_CHECK(listGet(sortedPos, &curEl, list));
+        curVal = heuristic(curEl);
+
+        if (curVal >= heuristic(prevEl))
+        {
+
+            sortedPos++;
+            continue;
+        }
+
+        saveptr = NULL;
+        i = 0;
+        while (listScan(&prevEl, &saveptr, list) == 0)
+        {
+            if (curVal <= heuristic(prevEl))
+            {
+                SAFE_ERROR_CHECK(listRemove(sortedPos, &curEl, list));
+                SAFE_ERROR_CHECK(listPut(i, curEl, list));
+                sortedPos++;
+                break;
+            }
+            i++;
+        }
+    }
+
+    return 0;
 }
