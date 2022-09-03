@@ -3,6 +3,17 @@
 
 #include <pthread.h>
 #include <stdint.h>
+#include <time.h>
+
+typedef struct _metadata
+{
+    char *name;
+    pthread_mutex_t *metadataLock;
+    time_t creationTime;
+    time_t lastAccess;
+    long numberAccesses;
+    size_t size;
+} Metadata;
 
 typedef struct _file
 {
@@ -18,10 +29,17 @@ typedef struct _file
     volatile int waitingThreads;
     pthread_mutex_t *waitingLock;
     pthread_cond_t *wake;
+    Metadata *metadata;
 } File;
 
 int fileInit(const char *name, int isCompressed, File *file);
 void fileDestroy(File *file);
+
+int metadataInit(const char *name, Metadata *metadata);
+void metadataDestroy(Metadata *metadata);
+
+int metadataAccess(Metadata *metadata);
+int metadataUpdateSize(Metadata *metadata, size_t size);
 
 int fileWrite(const void *content, size_t size, File *file);
 int fileAppend(const void *content, size_t size, File *file);

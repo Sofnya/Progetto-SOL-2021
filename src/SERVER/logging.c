@@ -1,7 +1,11 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include "SERVER/logging.h"
 #include "SERVER/globals.h"
@@ -27,7 +31,7 @@ int logger(char *msg, char *type)
 
     SAFE_NULL_CHECK(parsed = malloc(strlen(msg) + strlen(type) + 500));
 
-    sprintf(parsed, "%d/%d/%d %d:%d:%d\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, type, msg);
+    sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%d\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, gettid(), type, msg);
     fwrite(parsed, strlen(parsed), 1, file);
     fflush(file);
 

@@ -29,7 +29,7 @@ void test(void *par)
     return;
 }
 
-int testHeuristic(void *arg)
+long testHeuristic(void *arg)
 {
     return (int)arg;
 }

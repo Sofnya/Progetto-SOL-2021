@@ -109,6 +109,9 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
 
     fs->isCompressed = isCompressed;
 
+    SAFE_NULL_CHECK(fs->fsStats = malloc(sizeof(FSStats)));
+    SAFE_ERROR_CHECK(statsInit(fs->fsStats));
+
     return 0;
 }
 
@@ -119,20 +122,19 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
  */
 void fsDestroy(FileSystem *fs)
 {
-    char *cur;
+    Metadata *cur;
     File *curFile;
 
     logger("Destroying fileSystem", "STATUS");
     while (listSize(*fs->filesList) > 0)
     {
         listPop((void **)&cur, fs->filesList);
-        if (hashTableRemove(cur, (void **)&curFile, *fs->filesTable) == 0)
+        if (hashTableRemove(cur->name, (void **)&curFile, *fs->filesTable) == 0)
         {
             fileLock(curFile);
             fileDestroy(curFile);
             free(curFile);
         }
-        free(cur);
     }
 
     listDestroy(fs->filesList);
@@ -148,6 +150,9 @@ void fsDestroy(FileSystem *fs)
     free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
+
+    statsDestroy(fs->fsStats);
+    free(fs->fsStats);
 }
 
 int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd)
@@ -181,7 +186,6 @@ void fdDestroy(FileDescriptor *fd)
 int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
     File *file;
-    char *nameCopy;
     FileDescriptor *newFd;
     char log[500];
 
@@ -214,12 +218,6 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
             UNLOCK;
             LISTUNLOCK;
         });
-        CLEANUP_CHECK(nameCopy = malloc(strlen(pathname) + 1), NULL, {
-            UNLOCK;
-            LISTUNLOCK;
-        });
-
-        strcpy(nameCopy, pathname);
 
         CLEANUP_ERROR_CHECK(fileInit(pathname, fs->isCompressed, file), {
             UNLOCK;
@@ -231,7 +229,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
             LISTUNLOCK;
         });
 
-        CLEANUP_ERROR_CHECK(listAppend((void *)nameCopy, fs->filesList), {
+        CLEANUP_ERROR_CHECK(listAppend((void *)file->metadata, fs->filesList), {
             UNLOCK;
             LISTUNLOCK;
         });
@@ -244,6 +242,9 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 
         PTHREAD_CHECK(UNLOCK);
         PTHREAD_CHECK(LISTUNLOCK);
+
+        statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
+        atomicInc(1, fs->fsStats->filesCreated);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         fdInit(file->name, getpid(), FI_READ | FI_WRITE | FI_APPEND, newFd);
@@ -270,6 +271,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     }
     *fd = newFd;
 
+    atomicInc(1, fs->fsStats->open);
     return 0;
 }
 
@@ -282,6 +284,9 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
 
     fdDestroy(fd);
     free(fd);
+
+    atomicInc(1, fs->fsStats->close);
+
     return 0;
 }
 
@@ -320,6 +325,11 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
     tmpErr = errno;
 
     PTHREAD_CHECK(UNLOCK);
+
+    if (success == 0)
+    {
+        atomicInc(1, fs->fsStats->read);
+    }
     errno = tmpErr;
     return success;
 }
@@ -360,6 +370,9 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
     logger(log, "SIZE");
+
+    atomicInc(1, fs->fsStats->write);
+    statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
 
     return 0;
 }
@@ -403,6 +416,9 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
     logger(log, "SIZE");
 
+    atomicInc(1, fs->fsStats->append);
+    statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
+
     return 0;
 }
 
@@ -417,7 +433,7 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 {
     FileDescriptor *curFD;
-    char *cur = NULL;
+    Metadata *cur = NULL;
     int amount, i = 0;
     size_t curSize;
     void *curBuffer;
@@ -433,10 +449,10 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     {
         CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(buf); });
 
-        curSize = getSize(cur, fs);
+        curSize = getSize(cur->name, fs);
         CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, { LISTUNLOCK; });
 
-        if (openFile(cur, 0, &curFD, fs) == -1)
+        if (openFile(cur->name, 0, &curFD, fs) == -1)
         {
             free(curBuffer);
             continue;
@@ -454,12 +470,13 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
             continue;
         }
 
-        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur, &((*buf)[i])), {LISTUNLOCK;  free(buf); });
+        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[i])), {LISTUNLOCK;  free(buf); });
         free(curBuffer);
         i++;
     }
     PTHREAD_CHECK(LISTUNLOCK);
 
+    atomicInc(1, fs->fsStats->readN);
     return amount;
 }
 
@@ -485,6 +502,9 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
     }
 
     fd->flags |= FI_LOCK;
+
+    atomicInc(1, fs->fsStats->lock);
+
     return 0;
 }
 
@@ -504,6 +524,8 @@ int unlockFile(FileDescriptor *fd, FileSystem *fs)
     CLEANUP_ERROR_CHECK(fileUnlock(file), UNLOCK);
     PTHREAD_CHECK(UNLOCK);
     fd->flags &= ~FI_LOCK;
+
+    atomicInc(1, fs->fsStats->unlock);
 
     return 0;
 }
@@ -532,6 +554,8 @@ int tryLockFile(FileDescriptor *fd, FileSystem *fs)
     PTHREAD_CHECK(UNLOCK);
     fd->flags |= FI_LOCK;
 
+    atomicInc(1, fs->fsStats->lock);
+
     return 0;
 }
 
@@ -546,7 +570,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
     void *saveptr = NULL;
-    char *name;
+    Metadata *meta;
     int i;
 
     if (!(fd->flags & FI_LOCK))
@@ -560,31 +584,27 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 
     i = 0;
 
-    while (listScan((void **)&name, &saveptr, fs->filesList) != -1)
+    while (listScan((void **)&meta, &saveptr, fs->filesList) != -1)
     {
-        if (!strcmp(name, fd->name))
+        if (!strcmp(meta->name, fd->name))
         {
-            if (listRemove(i, (void **)&name, fs->filesList) == -1)
+            if (listRemove(i, (void **)&meta, fs->filesList) == -1)
             {
                 perror("Error on listRemove");
             }
-
-            free(name);
             break;
         }
         i++;
     }
     if (errno == EOF)
     {
-        if (!strcmp(name, fd->name))
+        if (!strcmp(meta->name, fd->name))
         {
 
-            if (listRemove(i, (void **)&name, fs->filesList) == -1)
+            if (listRemove(i, (void **)&meta, fs->filesList) == -1)
             {
                 perror("Error on listRemove");
             }
-
-            free(name);
         }
     }
     CLEANUP_PTHREAD_CHECK(LISTUNLOCK, UNLOCK);
@@ -598,6 +618,8 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     free(file);
 
     PTHREAD_CHECK(UNLOCK);
+
+    atomicInc(1, fs->fsStats->remove);
 
     return 0;
 }
@@ -762,7 +784,131 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
 
     listDestroy(&tmpFiles);
 
+    atomicInc(1, fs->fsStats->capMisses);
     if (n == 0)
         n = -1;
     return n;
+}
+
+char *_metadataPrinter(void *el)
+{
+    Metadata *data = (Metadata *)el;
+    char *result;
+
+    SAFE_NULL_CHECK(result = malloc(strlen(data->name) + 400));
+
+    sprintf(result, "Name: %-30s\tSize:%-10ld\tCreation Time:%-10ld\tLast Access Time:%-10ld\tAccess Count:%-10ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
+
+    return result;
+}
+
+void prettyPrintFiles(FileSystem *fs)
+{
+    LISTLOCK;
+    puts("\n---------- FileSystem Contents ----------");
+    printf("Number of files present:%-10ld\tSize of FileSystem:%-10ld\n", atomicGet(fs->curN), atomicGet(fs->curSize));
+    puts("--------------- All Files ---------------");
+    customPrintList(fs->filesList, &_metadataPrinter);
+    puts("----------------- End ------------------\n");
+    LISTUNLOCK;
+}
+
+void prettyPrintStats(FSStats *stats)
+{
+    puts("\n---------- FileSystem Stats ----------");
+    printf("Maximum number of files:%-10ld\tMaximum size of FileSystem:%-10ld\n", atomicGet(stats->maxN), atomicGet(stats->maxSize));
+    printf("Number of files created:%-10ld\tNumber of capacity misses:%-10ld\n", atomicGet(stats->filesCreated), atomicGet(stats->capMisses));
+    puts("---------- Operations Count ----------");
+    printf("Open:%-10ld\tClose:%-10ld\tRead:%-10ld\tWrite:%-10ld\tAppend:%-10ld\n", atomicGet(stats->open), atomicGet(stats->close), atomicGet(stats->read), atomicGet(stats->write), atomicGet(stats->append));
+    printf("ReadN:%-10ld\tLock:%-10ld\tUnlock:%-10ld\tRemove:%-10ld\n", atomicGet(stats->readN), atomicGet(stats->lock), atomicGet(stats->unlock), atomicGet(stats->remove));
+    puts("---------------- End -----------------\n");
+}
+
+int statsInit(FSStats *stats)
+{
+    SAFE_NULL_CHECK(stats->maxSize = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->maxN = malloc(sizeof(AtomicInt)));
+
+    SAFE_NULL_CHECK(stats->filesCreated = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->capMisses = malloc(sizeof(AtomicInt)));
+
+    SAFE_NULL_CHECK(stats->open = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->close = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->read = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->write = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->append = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->readN = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->lock = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->unlock = malloc(sizeof(AtomicInt)));
+    SAFE_NULL_CHECK(stats->remove = malloc(sizeof(AtomicInt)));
+
+    atomicInit(stats->maxSize);
+    atomicInit(stats->maxN);
+
+    atomicInit(stats->filesCreated);
+    atomicInit(stats->capMisses);
+
+    atomicInit(stats->open);
+    atomicInit(stats->close);
+    atomicInit(stats->read);
+    atomicInit(stats->write);
+    atomicInit(stats->append);
+    atomicInit(stats->readN);
+    atomicInit(stats->lock);
+    atomicInit(stats->unlock);
+    atomicInit(stats->remove);
+
+    SAFE_NULL_CHECK(stats->sizeMtx = malloc(sizeof(pthread_mutex_t)));
+    PTHREAD_CHECK(pthread_mutex_init(stats->sizeMtx, NULL));
+}
+void statsDestroy(FSStats *stats)
+{
+    atomicDestroy(stats->maxSize);
+    atomicDestroy(stats->maxN);
+
+    atomicDestroy(stats->filesCreated);
+    atomicDestroy(stats->capMisses);
+
+    atomicDestroy(stats->open);
+    atomicDestroy(stats->close);
+    atomicDestroy(stats->read);
+    atomicDestroy(stats->write);
+    atomicDestroy(stats->append);
+    atomicDestroy(stats->readN);
+    atomicDestroy(stats->lock);
+    atomicDestroy(stats->unlock);
+    atomicDestroy(stats->remove);
+
+    free(stats->maxSize);
+    free(stats->maxN);
+
+    free(stats->filesCreated);
+    free(stats->capMisses);
+
+    free(stats->open);
+    free(stats->close);
+    free(stats->read);
+    free(stats->write);
+    free(stats->append);
+    free(stats->readN);
+    free(stats->lock);
+    free(stats->unlock);
+    free(stats->remove);
+
+    pthread_mutex_destroy(stats->sizeMtx);
+    free(stats->sizeMtx);
+}
+
+int statsUpdateSize(FSStats *stats, size_t curSize, size_t curN)
+{
+    PTHREAD_CHECK(pthread_mutex_lock(stats->sizeMtx));
+    if (curSize > atomicGet(stats->maxSize))
+    {
+        atomicPut(curSize, stats->maxSize);
+    }
+    if (curN > atomicGet(stats->maxN))
+    {
+        atomicPut(curN, stats->maxN);
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(stats->sizeMtx));
 }

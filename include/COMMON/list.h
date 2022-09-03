@@ -28,6 +28,8 @@ int listSize(List list);
 int listScan(void **el, void **saveptr, List *list);
 
 void printList(List *list);
-int listSort(List *list, int (*heuristic)(void *));
+void customPrintList(List *list, char *(*fnc)(void *));
+
+int listSort(List *list, long (*heuristic)(void *));
 
 #endif

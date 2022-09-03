@@ -38,11 +38,14 @@ int fileInit(const char *name, int isCompressed, File *file)
     PTHREAD_CHECK(pthread_mutex_init(file->waitingLock, NULL));
     PTHREAD_CHECK(pthread_cond_init(file->wake, NULL));
 
+    SAFE_NULL_CHECK(file->metadata = malloc(sizeof(Metadata)));
+    metadataInit(name, file->metadata);
+
     return 0;
 }
 
 /**
- * @brief Destroys given file, freeing it's memory.
+ * @brief Destroys given file, freeing it's resources.
  *
  * @param file the file to be destroyed
  */
@@ -66,6 +69,68 @@ void fileDestroy(File *file)
     free(file->mtx);
     free(file->waitingLock);
     free(file->wake);
+
+    metadataDestroy(file->metadata);
+    free(file->metadata);
+}
+
+/**
+ * @brief Initializes given metadata, should be done at file creation.
+ *
+ * @param metadata the Metadata to be initialized.
+ * @return int 0 on success, -1 on failure.
+ */
+int metadataInit(const char *name, Metadata *metadata)
+{
+    metadata->creationTime = time(NULL);
+    metadata->lastAccess = time(NULL);
+    metadata->numberAccesses = 0;
+    metadata->size = 0;
+
+    SAFE_NULL_CHECK(metadata->metadataLock = malloc(sizeof(pthread_mutex_t)));
+    PTHREAD_CHECK(pthread_mutex_init(metadata->metadataLock, NULL));
+
+    SAFE_NULL_CHECK(metadata->name = malloc((strlen(name) + 1) * sizeof(char)));
+    strcpy(metadata->name, name);
+
+    return 0;
+}
+
+/**
+ * @brief Destroys given metadata, freeing it's resources.
+ *
+ * @param metadata the Metadata to be destroyed.
+ */
+void metadataDestroy(Metadata *metadata)
+{
+    PTHREAD_CHECK(pthread_mutex_destroy(metadata->metadataLock));
+    free(metadata->metadataLock);
+    free(metadata->name);
+}
+
+/**
+ * @brief Atomically updates metadata to represent a fileAccess.
+ *
+ * @param metadata the metadata to be updated.
+ * @return int 0 on success, -1 on failure.
+ */
+int metadataAccess(Metadata *metadata)
+{
+    PTHREAD_CHECK(pthread_mutex_lock(metadata->metadataLock));
+
+    metadata->numberAccesses++;
+    metadata->lastAccess = time(NULL);
+
+    PTHREAD_CHECK(pthread_mutex_unlock(metadata->metadataLock));
+}
+
+int metadataUpdateSize(Metadata *metadata, size_t size)
+{
+    PTHREAD_CHECK(pthread_mutex_lock(metadata->metadataLock));
+
+    metadata->size = size;
+
+    PTHREAD_CHECK(pthread_mutex_unlock(metadata->metadataLock));
 }
 
 /**
@@ -79,7 +144,8 @@ void fileDestroy(File *file)
 int fileWrite(const void *content, size_t size, File *file)
 {
     file->size = size;
-
+    metadataAccess(file->metadata);
+    metadataUpdateSize(file->metadata, size);
     if (size != 0)
     {
         UNSAFE_NULL_CHECK(file->content = realloc(file->content, size));
@@ -112,6 +178,9 @@ int fileWrite(const void *content, size_t size, File *file)
 int fileAppend(const void *content, size_t size, File *file)
 {
     int shouldCompress = file->isCompressed;
+
+    metadataAccess(file->metadata);
+
     if (file->isCompressed)
     {
         SAFE_ERROR_CHECK(fileDecompress(file));
@@ -121,6 +190,8 @@ int fileAppend(const void *content, size_t size, File *file)
     memcpy(file->content + file->size, content, size);
 
     file->size += size;
+
+    metadataUpdateSize(file->metadata, file->size);
 
     if (shouldCompress)
     {
@@ -140,6 +211,8 @@ int fileAppend(const void *content, size_t size, File *file)
 int fileRead(void *buf, size_t bufsize, File *file)
 {
     size_t n;
+
+    metadataAccess(file->metadata);
     if (file->isCompressed)
     {
         return uncompress(buf, &bufsize, file->content, file->compressedSize);
@@ -164,6 +237,8 @@ int fileRead(void *buf, size_t bufsize, File *file)
 int fileTryLock(File *file)
 {
     int res;
+    metadataAccess(file->metadata);
+
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
 
     res = pthread_mutex_trylock(file->mtx);
@@ -189,6 +264,8 @@ int fileTryLock(File *file)
  */
 int fileLock(File *file)
 {
+    metadataAccess(file->metadata);
+
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
 
     file->waitingThreads++;
@@ -221,6 +298,8 @@ int fileLock(File *file)
  */
 int fileUnlock(File *file)
 {
+    metadataAccess(file->metadata);
+
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
     PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
     PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));

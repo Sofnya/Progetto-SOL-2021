@@ -13,6 +13,7 @@ int64_t MAX_FILES = 100;
 int64_t MAX_MEMORY = 100 * 1024 * 1024;
 int ENABLE_COMPRESSION = 1;
 int VERBOSE_PRINT = 0;
+int POLICY = P_LRU;
 
 void load_config(char *path)
 {
@@ -158,6 +159,49 @@ void load_config(char *path)
                 printf("Invalid value %s on line %d, ignoring.\n", value, lineN);
             }
         }
+        else if (!strcmp(option, "POLICY"))
+        {
+            if (!strncmp(value, "RANDOM*", 7))
+            {
+                POLICY = P_RAND;
+            }
+            else if (!strncmp(value, "FIFO", 4))
+            {
+                POLICY = P_FIFO;
+            }
+            else if (!strncmp(value, "LIFO", 4))
+            {
+                POLICY = P_LIFO;
+            }
+            else if (!strncmp(value, "LRU", 3))
+            {
+                POLICY = P_LRU;
+            }
+            else if (!strncmp(value, "MRU", 3))
+            {
+                POLICY = P_MRU;
+            }
+            else if (!strncmp(value, "LU", 2))
+            {
+                POLICY = P_LU;
+            }
+            else if (!strncmp(value, "MU", 2))
+            {
+                POLICY = P_MU;
+            }
+            else if (!strncmp(value, "SMOL", 4))
+            {
+                POLICY = P_SMOL;
+            }
+            else if (!strncmp(value, "BIGG", 4))
+            {
+                POLICY = P_BIGG;
+            }
+            else
+            {
+                printf("Invalid policy %s on line %d, ignoring.\n", value, lineN);
+            }
+        }
         else
         {
             printf("Unsupported option %s at line %d, ignoring.\n", option, lineN);
@@ -172,4 +216,47 @@ void load_config(char *path)
     fclose(configFile);
     puts("Succesfully loaded config:");
     printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\nVERBOSE_PRINT:%d\nLOG_FILE:%s\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, VERBOSE_PRINT, LOG_FILE);
+
+    switch (POLICY)
+    {
+    case (P_RAND):
+        puts("POLICY:RANDOM");
+        break;
+
+    case (P_FIFO):
+        puts("POLICY:FIFO");
+        break;
+
+    case (P_LIFO):
+        puts("POLICY:LIFO");
+        break;
+
+    case (P_LRU):
+        puts("POLICY:LRU");
+        break;
+
+    case (P_MRU):
+        puts("POLICY:MRU");
+        break;
+
+    case (P_MU):
+        puts("POLICY:MU");
+        break;
+
+    case (P_LU):
+        puts("POLICY:LU");
+        break;
+
+    case (P_SMOL):
+        puts("POLICY:SMOL");
+        break;
+
+    case (P_BIGG):
+        puts("POLICY:BIGG");
+        break;
+
+    default:
+        puts("POLICY:INVALID");
+        break;
+    }
 }

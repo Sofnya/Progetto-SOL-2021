@@ -19,6 +19,22 @@
 #define FI_APPEND 00000004
 #define FI_LOCK 00000010
 
+typedef struct _stats
+{
+    AtomicInt *maxSize;
+    AtomicInt *maxN;
+    pthread_mutex_t *sizeMtx;
+
+    AtomicInt *filesCreated;
+    AtomicInt *capMisses;
+
+    AtomicInt *open, *close;
+    AtomicInt *read, *write, *append;
+    AtomicInt *readN;
+    AtomicInt *lock, *unlock;
+    AtomicInt *remove;
+
+} FSStats;
 typedef struct _filesystem
 {
     List *filesList;
@@ -29,6 +45,8 @@ typedef struct _filesystem
     int isCompressed;
 
     pthread_rwlock_t *rwLock;
+
+    FSStats *fsStats;
 } FileSystem;
 
 typedef struct _fileDescriptor
@@ -43,6 +61,11 @@ void fsDestroy(FileSystem *fs);
 
 int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd);
 void fdDestroy(FileDescriptor *fd);
+
+int statsInit(FSStats *stats);
+void statsDestroy(FSStats *stats);
+
+int statsUpdateSize(FSStats *stats, size_t curSize, size_t curN);
 
 int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
@@ -66,5 +89,8 @@ size_t getCurSize(FileSystem *fs);
 size_t getCurN(FileSystem *fs);
 
 int freeSpace(size_t size, FileContainer **buf, FileSystem *fs);
+
+void prettyPrintFiles(FileSystem *fs);
+void prettyPrintStats(FSStats *stats);
 
 #endif

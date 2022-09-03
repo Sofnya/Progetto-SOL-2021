@@ -476,6 +476,8 @@ void cleanup(void)
 
     threadpoolDestroy(&pool);
 
+    prettyPrintStats(fs.fsStats);
+    prettyPrintFiles(&fs);
     fsDestroy(&fs);
 
     logger("Done cleaning up!", "STATUS");

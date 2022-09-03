@@ -417,13 +417,42 @@ void printList(List *list)
     printf("|%p|\n", el);
 }
 
-int listSort(List *list, int (*heuristic)(void *))
+/**
+ * @brief Prints a list's contents, using the custom fnc provided for every element.
+ *
+ * @param list the list to be printed.
+ * @param fnc a function that turns every element in the list in a malloced printable string.
+ */
+void customPrintList(List *list, char *(*fnc)(void *))
+{
+    void *saveptr = NULL;
+    void *el;
+    char *cur;
+    int i = 0;
+
+    if (listSize(*list) == 0)
+        return;
+
+    while (listScan(&el, &saveptr, list) != -1)
+    {
+        cur = fnc(el);
+        puts(cur);
+        free(cur);
+        i++;
+    }
+    cur = fnc(el);
+    puts(cur);
+
+    free(cur);
+}
+
+int listSort(List *list, long (*heuristic)(void *))
 {
     size_t sortedPos = 1;
     void *saveptr = NULL;
     void *curEl;
     void *prevEl;
-    int curVal;
+    long curVal;
     int i;
 
     if (listSize(*list) <= 1)

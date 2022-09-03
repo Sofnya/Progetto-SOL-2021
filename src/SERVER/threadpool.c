@@ -290,13 +290,6 @@ void *_manage(void *args)
 
     _threadpoolKILL(pool);
 
-    while (atomicGet(pool->alive) > 0)
-    {
-#ifdef TP_DEBUG
-        printf("%ld threads are still alive, waiting for them to die!\n", atomicGet(pool->alive));
-#endif
-        usleep(100000);
-    }
     return 0;
 }
 
@@ -316,7 +309,7 @@ void _threadCleanup(void *args)
 
     while (listScan((void **)&el, &saveptr, pids) == 0)
     {
-        if (*el == mine)
+        if (pthread_equal(*el, mine))
         {
             found = 1;
             listRemove(i, (void **)&el, pids);
@@ -327,7 +320,7 @@ void _threadCleanup(void *args)
     }
     if (errno == EOF)
     {
-        if (*el == mine)
+        if (pthread_equal(*el, mine))
         {
             found = 1;
             listRemove(i, (void **)&el, pids);

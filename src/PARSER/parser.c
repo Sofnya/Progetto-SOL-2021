@@ -24,7 +24,7 @@ Stats parse(const char *path)
 {
     Stats stats;
     FILE *logFile;
-    char *line = NULL, *preamble = NULL, *value = NULL, *saveptr = NULL, *type = NULL;
+    char *line = NULL, *preamble = NULL, *value = NULL, *saveptr = NULL, *type = NULL, *tid = NULL;
     char *innersaveptr = NULL, *value1 = NULL, *value2 = NULL;
     size_t len = 0;
     int lineN = 0;
@@ -40,6 +40,7 @@ Stats parse(const char *path)
     stats.unlockN = 0;
     stats.openN = 0;
     stats.closeN = 0;
+    stats.removeN = 0;
 
     stats.readSize = 0;
     stats.writeSize = 0;
@@ -76,6 +77,7 @@ Stats parse(const char *path)
         }
 
         preamble = strtok_r(line, "\t", &saveptr);
+        tid = strtok_r(NULL, "\t", &saveptr);
         value = strtok_r(NULL, "\t", &saveptr);
 
         if ((preamble == NULL) || (value == NULL))
@@ -135,6 +137,10 @@ Stats parse(const char *path)
             else if (!strncmp(type, "CLOSE", 5))
             {
                 stats.closeN++;
+            }
+            else if (!strncmp(type, "REMOVE", 6))
+            {
+                stats.removeN++;
             }
 
             stats.nRequests++;
@@ -277,7 +283,7 @@ void printStats(Stats stats)
     printf("Connections:%lld\tMaximum Simultaneous Connections:%lld\n", stats.connN, stats.maxConn);
 
     printf("\nType of requests:\n");
-    printf("Read:%lld Write:%lld Open:%lld Close:%lld Lock:%lld Unlock:%lld\n", stats.readN, stats.writeN, stats.openN, stats.closeN, stats.lockN, stats.unlockN);
+    printf("Read:%lld Write:%lld Open:%lld Close:%lld Lock:%lld Unlock:%lld Remove:%lld\n", stats.readN, stats.writeN, stats.openN, stats.closeN, stats.lockN, stats.unlockN, stats.removeN);
     printf("Total size of Reads:%lld\tWrites:%lld\n", stats.readSize, stats.writeSize);
     if (stats.readN != 0)
     {

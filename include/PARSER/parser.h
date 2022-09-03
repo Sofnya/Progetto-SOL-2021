@@ -5,7 +5,7 @@
 
 typedef struct _stats
 {
-    long long readN, writeN, lockN, unlockN, openN, closeN;
+    long long readN, writeN, lockN, unlockN, openN, closeN, removeN;
     long long readSize, writeSize;
     long long nErrors;
     long long maxSize, maxN;
