@@ -42,6 +42,7 @@ void cleanup(void);
 int _receiveMessageWrapper(void *args);
 int _sendMessageWrapper(void *args);
 
+// Mostly just exits and lets the cleanup do it's job. Calls the correct ThreadPoolExit based on signum.
 void signalHandler(int signum)
 {
     logger("Exiting", "STATUS");
@@ -54,7 +55,28 @@ void signalHandler(int signum)
     {
         threadpoolFastExit(&pool);
     }
+    else
+    {
+        threadpoolFastExit(&pool);
+    }
     exit(EXIT_SUCCESS);
+}
+
+// This is called at every clean exit, as it's registered atexit(). We use it to free all resources, and print an account of the session.
+void cleanup(void)
+{
+    logger("Cleaning up!", "STATUS");
+    close(sfd);
+    unlink(SOCK_NAME);
+
+    // We can safely destroy the ThreadPool as we called a ThreadPoolExit in the signal handler beforehand, no other exits are present in the code.
+    threadpoolDestroy(&pool);
+
+    prettyPrintStats(fs.fsStats);
+    prettyPrintFiles(&fs);
+    fsDestroy(&fs);
+
+    logger("Done cleaning up!", "STATUS");
 }
 
 int main(int argc, char *argv[])
@@ -63,13 +85,18 @@ int main(int argc, char *argv[])
     int *curFd;
     struct sockaddr_un sa;
 
+    // Register our signalHandler.
     signal(SIGQUIT, &signalHandler);
     signal(SIGINT, &signalHandler);
     signal(SIGHUP, &signalHandler);
+
+    // And ignore SIGPIPE to avoid having problems with reads/sends.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
 
+    // Register our cleanup.
     atexit(&cleanup);
 
+    // We start by parsing our config file.
     if (argc == 2)
     {
         load_config(argv[1]);
@@ -79,12 +106,15 @@ int main(int argc, char *argv[])
         load_config("config.txt");
     }
 
+    // Always use a clean log.
     remove(LOG_FILE);
 
     logger("Starting", "STATUS");
 
+    // We now have the config options needed to initialize our FileSystem.
     fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 
+    // And open our socket.
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
     sa.sun_family = AF_UNIX;
@@ -95,21 +125,23 @@ int main(int argc, char *argv[])
 
     ERROR_CHECK(listen(sfd, SOMAXCONN))
 
+    // We initialize our ThreadPool.
     threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
+
+    // And now we only wait for new connections, accepting them and passing them to the ThreadPool to handle.
     while (1)
     {
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
         SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
         *curFd = fdc;
-        printf("Got connection on %d\n", fdc);
         threadpoolSubmit(&handleConnection, curFd, &pool);
-
-        // puts("Got connection!");
     }
-
-    exit(EXIT_SUCCESS);
 }
 
+// Where the magic happens.
+// A thread from the ThreadPool will handle a whole connection with a client.
+// This shouldn't be a problem, as the ThreadPool is dinamic, and as such we can always spawn more threads if any are needed/ some are blocked in I/O.
+// This handles the receiving a request and sending a response logic, the logic for interacting with the FileSystem is handled by parseRequest().
 void handleConnection(void *fdc)
 {
     Message *request;
@@ -124,10 +156,10 @@ void handleConnection(void *fdc)
     int fd = *(int *)fdc;
     int err;
     args.fd = fd;
-    printf("Handling connection on %d\n", fd);
     bool done = false;
     free(fdc);
 
+    // Every connection has it's own ConnState.
     connStateInit(&fs, &state);
 
     logConnection(state);
@@ -147,6 +179,9 @@ void handleConnection(void *fdc)
         request->status = 0;
 
         args.m = request;
+
+        // We always receive one request.
+        // We receive and send messages with a timeout, if none are recieved for too long(5s) we assume the client is dead and disconnect them.
         err = timeoutCall(_receiveMessageWrapper, (void *)&args, maxWait);
         if (err == -1 || err == ETIMEDOUT)
         {
@@ -161,10 +196,14 @@ void handleConnection(void *fdc)
         done = (request->type == MT_DISCONNECT);
 
         logRequest(request, state);
+
+        // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
         response = parseRequest(request, state);
         logResponse(response, state);
 
         args.m = response;
+
+        // And send our response, again with a 5s timeout.
         err = timeoutCall(_sendMessageWrapper, (void *)&args, maxWait);
         if (err == -1 || err == ETIMEDOUT)
         {
@@ -189,7 +228,19 @@ void handleConnection(void *fdc)
     connStateDestroy(&state);
     return;
 }
+// We need those wrappers to use the generic timeoutCall.
+int _receiveMessageWrapper(void *args)
+{
+    struct _messageArgs tmp = *((struct _messageArgs *)args);
+    return receiveMessage(tmp.fd, tmp.m);
+}
+int _sendMessageWrapper(void *args)
+{
+    struct _messageArgs tmp = *((struct _messageArgs *)args);
+    return sendMessage(tmp.fd, tmp.m);
+}
 
+// Here we parse a request, making all necessary calls to the FileSystem and generating an appropriate response with the results.
 Message *parseRequest(Message *request, ConnState state)
 {
     Message *response;
@@ -211,11 +262,13 @@ Message *parseRequest(Message *request, ConnState state)
         void *buf;
         size_t size;
 
+        // A safety check.
         if (request->size == sizeof(int))
         {
             flags = *((int *)(request->content));
             if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
+                // I wanted more information in the message so that we can tell which flags where used in the log.
                 if ((flags & O_CREATE) && (flags & O_LOCK))
                 {
                     messageInit(0, NULL, "OPEN|CREATE|LOCK", MT_INFO, MS_OK, response);
@@ -233,6 +286,7 @@ Message *parseRequest(Message *request, ConnState state)
                     messageInit(0, NULL, "OPEN", MT_INFO, MS_OK, response);
                 }
             }
+            // We handle capacity misses by serializing our array of FileContainers in a buffer, and send it that way.
             else if (errno == EOVERFLOW)
             {
                 if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
@@ -280,6 +334,7 @@ Message *parseRequest(Message *request, ConnState state)
         void *buf;
         size_t size;
 
+        // We need the File's uncompressed size to allocate an appropriate buffer.
         size = getSize(request->info, state.fs);
         if (size == 0)
         {
@@ -316,6 +371,7 @@ Message *parseRequest(Message *request, ConnState state)
         {
             messageInit(0, NULL, "WRITE", MT_INFO, MS_OK, response);
         }
+        // Need to handle capacity missess.
         else if (errno == EOVERFLOW)
         {
             if (serializeContainerArray(fcs, fcsSize, &size, &buf) == 0)
@@ -344,6 +400,7 @@ Message *parseRequest(Message *request, ConnState state)
         return response;
     }
 
+    // Appends are actually never called by the client, but still supported as per the API.
     case (MT_FAPPEND):
     {
         FileContainer *fcs = NULL;
@@ -440,6 +497,7 @@ Message *parseRequest(Message *request, ConnState state)
         n = *(int *)request->content;
         amount = conn_readNFiles(n, &fc, state);
 
+        // As for a capacity miss, we use a serialized FileContainer array to send many files back.
         if (amount > 0)
         {
             SAFE_ERROR_CHECK(serializeContainerArray(fc, amount, &size, &buf));
@@ -468,32 +526,7 @@ Message *parseRequest(Message *request, ConnState state)
     }
 }
 
-void cleanup(void)
-{
-    logger("Cleaning up!", "STATUS");
-    close(sfd);
-    unlink(SOCK_NAME);
-
-    threadpoolDestroy(&pool);
-
-    prettyPrintStats(fs.fsStats);
-    prettyPrintFiles(&fs);
-    fsDestroy(&fs);
-
-    logger("Done cleaning up!", "STATUS");
-}
-
-int _receiveMessageWrapper(void *args)
-{
-    struct _messageArgs tmp = *((struct _messageArgs *)args);
-    return receiveMessage(tmp.fd, tmp.m);
-}
-int _sendMessageWrapper(void *args)
-{
-    struct _messageArgs tmp = *((struct _messageArgs *)args);
-    return sendMessage(tmp.fd, tmp.m);
-}
-
+// Just some pretty logging.
 void logConnection(ConnState state)
 {
     char parsed[36 + 100];

@@ -94,9 +94,9 @@ long biggHeuristic(void *el)
 }
 
 /**
- * @brief Opens and locks a file chosen to be removed from the fileserver on a capacity miss.
+ * @brief Opens and locks a File chosen to be removed from the fileserver on a capacity miss.
  *
- * @param fd where the file descriptor will be returned.
+ * @param fd where the FileDescriptor will be returned.
  * @param fs the FileSystem on which to operate.
  * @return int 0 on success, -1 and sets errno on failure.
  */
@@ -106,6 +106,7 @@ int missPolicy(FileDescriptor **fd, FileSystem *fs)
     Metadata *target;
     long (*heuristic)(void *);
 
+    // First we choose our sorting heuristic based on global POLICY.
     switch (POLICY)
     {
     case (P_RAND):
@@ -148,8 +149,11 @@ int missPolicy(FileDescriptor **fd, FileSystem *fs)
         heuristic = &lruHeuristic;
     }
 
+    // Then sort the filesList accordingly.
+    // As this is an insertionSort, best case complexity is O(n). So we don't need to worry about sorting too often.
     listSort(fs->filesList, heuristic);
 
+    // We then find and lock the first unlocked File available.
     for (i = 0; i < fs->filesList->size; i++)
     {
         SAFE_ERROR_CHECK(listGet(i, (void **)&target, fs->filesList));

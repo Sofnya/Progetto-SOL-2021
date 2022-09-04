@@ -6,5 +6,5 @@ MAX_MEMORY=100M
 ENABLE_COMPRESSION=TRUE
 VERBOSE_PRINT=TRUE
 LOG_FILE=log
-# alternatives are: RANDOM*, FIFO, LIFO*, LRU, MRU*, LU, MU*, SMOL, BIGG where ones with a * are probably best avoided.
+// alternatives are: RANDOM*, FIFO, LIFO*, LRU, MRU*, LU, MU*, SMOL, BIGG where ones with a * are probably best avoided.
 POLICY=LRU

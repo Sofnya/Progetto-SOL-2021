@@ -10,6 +10,13 @@
 #include "COMMON/macros.h"
 #include "SERVER/logging.h"
 
+/**
+ * @brief Initializes given ThreadPool with given core and max size.
+ *
+ * @param coreSize the coreSize of the new ThreadPool.
+ * @param maxSize the maxSize of the new ThreadPool.
+ * @param pool the ThreadPool to be initialized.
+ */
 void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
 {
     pool->_coreSize = coreSize;
@@ -30,9 +37,15 @@ void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
     pool->_closed = false;
     pool->_terminate = false;
 
+    // At init, we also spawn our manager and automatically start the pool.
     pthread_create(&pool->_manager, NULL, _manage, (void *)pool);
 }
 
+/**
+ * @brief Destroys given ThreadPool, freeing it's resources. Should only be called after a ThreadPoolExit has been called.
+ *
+ * @param pool the ThreadPool to be destroyed.
+ */
 void threadpoolDestroy(ThreadPool *pool)
 {
     struct _exec *cur;
@@ -62,39 +75,70 @@ void threadpoolDestroy(ThreadPool *pool)
     free(pool->_pidsmtx);
 }
 
+/**
+ * @brief Closes the ThreadPool, stopping it from accepting any further jobs.
+ *
+ * @param pool
+ */
 void threadpoolClose(ThreadPool *pool)
 {
     pool->_closed = true;
 }
 
+/**
+ * @brief Terminates the ThreadPool, telling all threads, once free, to terminate.
+ *
+ * @param pool
+ */
 void threadpoolTerminate(ThreadPool *pool)
 {
     pool->_terminate = true;
 }
 
+/**
+ * @brief Makes given ThreadPool exit cleanly, closing it but waiting for all jobs to finish before terminating it.
+ *
+ * @param pool the ThreadPool to terminate.
+ */
 void threadpoolCleanExit(ThreadPool *pool)
 {
     struct timespec abstime;
 
+    // First close the pool to further submissions.
     threadpoolClose(pool);
+
+    // We busy wait for the queue to be empty.
     while (syncqueueLen(*pool->_queue) > 0)
     {
     }
+
+    // Once we are done we terminate it.
     threadpoolTerminate(pool);
+    // We use syncqueueClose to wake all threads waiting for further jobs.
+    syncqueueClose(pool->_queue);
 
     timespec_get(&abstime, TIME_UTC);
     abstime.tv_sec += 10;
     logger("Joining manager...", "STATUS");
-    printf("Calling pthread_join from PID:%d and PTHREAD:%ld on PTHREAD:%ld\n", getpid(), pthread_self(), pool->_manager);
     PTHREAD_CHECK(pthread_timedjoin_np(pool->_manager, NULL, &abstime));
     logger("Manager joined!", "STATUS");
 }
 
+/**
+ * @brief Makes given ThreadPool exit fast, closing it, terminating it instantly, and cancelling all Threads violently if they are not done within 5s.
+ * This can obviously cause resource leaks.
+ *
+ * @param pool the ThreadPool to terminate.
+ */
 void threadpoolFastExit(ThreadPool *pool)
 {
     int i;
+
+    // We first close the pool to further submissions.
     threadpoolClose(pool);
+    // We then tell all threads to terminate as soon as possible, without consuming the pool.
     threadpoolTerminate(pool);
+    // Lastly we wake up all threads waiting for further jobs.
     syncqueueClose(pool->_queue);
 
     // Waits for up to 5 seconds for all threads to terminate.
@@ -114,15 +158,16 @@ void threadpoolFastExit(ThreadPool *pool)
     logger("FastExit done", "STATUS");
 }
 
+/**
+ * @brief Cancels all alive threads in given ThreadPool. This is very violent and will result in resource leaks. Should only be used as a last resort.
+ *
+ * @param pool
+ */
 void threadpoolCancel(ThreadPool *pool)
 {
     void *el;
     pthread_t *pid;
     char log[500];
-
-    printf("Canceling, alive:%ld\n", atomicGet(pool->alive));
-    printf("ListSize:%d\n", listSize(*pool->_pids));
-    printList(pool->_pids);
 
     PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
     while (listSize(*pool->_pids) > 0)
@@ -131,22 +176,34 @@ void threadpoolCancel(ThreadPool *pool)
         pid = (pthread_t *)el;
         sprintf(log, ">Canceling:%ld", *pid);
         logger(log, "THREADPOOL");
+        // All pids in pool->_pids are guaranteed alive, as threads automatically remove themselves from the list on death.
+        // As such we can safely cancel them.
         pthread_cancel(*pid);
         free(el);
     }
     PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
 }
 
+/**
+ * @brief Submits given task fnc(arg) to the ThreadPool.
+ *
+ * @param fnc the function to be evaluated.
+ * @param arg the arguments on which to evaluate fnc.
+ * @param pool the ThreadPool to which to submit.
+ * @return int 0 on success, -1 and sets errno on failure.
+ */
 int threadpoolSubmit(void (*fnc)(void *), void *arg, ThreadPool *pool)
 {
     struct _exec *newExec;
 
+    // If the ThreadPool is closed we return an error without accepting the job.
     if (pool->_closed)
     {
         errno = EINVAL;
         return -1;
     }
 
+    // Otherwise we initialize the job and push it on the queue.
     SAFE_NULL_CHECK(newExec = malloc(sizeof(struct _exec)));
     newExec->arg = arg;
     newExec->fnc = fnc;
@@ -156,11 +213,18 @@ int threadpoolSubmit(void (*fnc)(void *), void *arg, ThreadPool *pool)
     return 0;
 }
 
+/**
+ * @brief Called by the pool manager to spawn a new thread in the ThreadPool.
+ *
+ * @param pool the ThreadPool in which to spawn a new thread.
+ * @return int 0 on success, -1 and sets errno on failure.
+ */
 int _spawnThread(ThreadPool *pool)
 {
     struct _execLoopArgs *curArgs;
     pthread_t *pid;
 
+    // We first initialize the new thread's arguments.
     SAFE_NULL_CHECK(pid = malloc(sizeof(pthread_t)));
     SAFE_NULL_CHECK(curArgs = malloc(sizeof(struct _execLoopArgs)));
     curArgs->queue = pool->_queue;
@@ -171,20 +235,28 @@ int _spawnThread(ThreadPool *pool)
 
     PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
 
+    // We start the thread inside of the critical zone pidsmtx to make sure that the thread doesn't die before we put it's pid in the _pids list.
     PTHREAD_CHECK(pthread_create(pid, NULL, _execLoop, (void *)curArgs));
 
     listAppend((void *)pid, pool->_pids);
     PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
 
-    return 1;
+    return 0;
 }
 
+/**
+ * @brief The loop that a thread of the ThreadPool executes, taking jobs from the queue and running them until terminated.
+ *
+ * @param args should point to a valid struct _execLoopArgs, which the thread will need.
+ * @return void* nothing.
+ */
 void *_execLoop(void *args)
 {
     struct _exec *curTask;
     void (*curFunc)(void *);
     void *curArgs;
 
+    // First we parse the given args.
     bool volatile *terminate = ((struct _execLoopArgs *)args)->terminate;
     SyncQueue *queue = ((struct _execLoopArgs *)args)->queue;
     AtomicInt *alive = ((struct _execLoopArgs *)args)->alive;
@@ -196,32 +268,112 @@ void *_execLoop(void *args)
     cln->pidsmtx = ((struct _execLoopArgs *)args)->pidsmtx;
     free(args);
 
+    // We then notify others we are alive.
     atomicInc(1, alive);
+    // And push our threadCleanup to always be executed at exit.
     pthread_cleanup_push(&_threadCleanup, (void *)cln);
 
+    // The thread should always be cancellable, as usually it will need to be cancelled in blocking situations, such as waiting for a lock.
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
+    // We check terminate between every execution of a job.
     while (!(*terminate))
     {
         errno = 0;
+        // syncqueuePop is blocking, so if no jobs are present we will be stuck here.
         if ((curTask = (struct _exec *)syncqueuePop(queue)) == NULL)
         {
             if (errno == EINVAL)
-                return 0;
+                pthread_exit(NULL);
 
             continue;
         }
+        // Check terminate again after the blocking call.
+        if (*terminate)
+        {
+            break;
+        }
+
         curFunc = curTask->fnc;
         curArgs = curTask->arg;
 
         free(curTask);
+
+        // And evaluate the function.
         curFunc(curArgs);
     }
 
+    // If we terminate, execute the cleanup and exit.
     pthread_cleanup_pop(true);
     pthread_exit(NULL);
 }
 
+/**
+ * @brief The cleanup of a thread, will always be executed on a threads death.
+ *
+ * @param args should point to a valid struct _cleanup which contains necessary information for the dying thread.
+ */
+void _threadCleanup(void *args)
+{
+    // First parse the args.
+    struct _cleanup *cln = (struct _cleanup *)args;
+
+    AtomicInt *alive = cln->alive;
+    List *pids = cln->pids;
+    pthread_mutex_t *poolmtx = cln->pidsmtx;
+    pthread_t mine, *el;
+    void *saveptr = NULL;
+    int i = 0, found = 0;
+
+    // Enter the critical poolmtx portion, as we will be removing ourselves from the pool->_pids list.
+    PTHREAD_CHECK(pthread_mutex_lock(poolmtx));
+    mine = pthread_self();
+
+    // Look for ourselves in the list.
+    while (listScan((void **)&el, &saveptr, pids) == 0)
+    {
+        if (pthread_equal(*el, mine))
+        {
+            found = 1;
+            listRemove(i, (void **)&el, pids);
+            free(el);
+            break;
+        }
+        i++;
+    }
+    // List scan always misses the last element.
+    if (errno == EOF)
+    {
+        if (pthread_equal(*el, mine))
+        {
+            found = 1;
+            listRemove(i, (void **)&el, pids);
+            free(el);
+        }
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(poolmtx));
+
+    // Now notify others we are no longer alive.
+    atomicDec(1, alive);
+
+    if (!found)
+    {
+        // This really shouldn't happen, so a very large warning is printed.
+        puts("\n\n------------\nWARNING: NOT FOUND!!\n-----------\n");
+    }
+
+    free(cln);
+
+    // Detach ourselves right before exit, as noone joins threads. It's not done before as threads should be cancellable while they are still in the pool->_pids list.
+    PTHREAD_CHECK(pthread_detach(mine));
+}
+
+/**
+ * @brief The main of the manager thread. Handles the resizing of the pool, spawning and killing threads as needed.
+ *
+ * @param args should point to the ThreadPool to be managed.
+ * @return void* nothing.
+ */
 void *_manage(void *args)
 {
     ThreadPool *pool = (ThreadPool *)args;
@@ -231,20 +383,21 @@ void *_manage(void *args)
     size_t i;
     char log[500];
 
+    // The manager also has to check for ThreadPool termination.
     while (!pool->_terminate)
     {
+        // curSize is the curreng number of alive threads.
         curSize = atomicGet(pool->alive);
 
-#ifdef TP_DEBUG
-        puts("Running a round of threadpool management:");
-        printf("There are %ld alive threads.", curSize);
-#endif
+        // To avoid filling the log with alives, we only notify on a changed size.
         if (curSize != lastSize)
         {
             sprintf(log, ">Alive:%ld", curSize);
             logger(log, "THREADPOOL");
             lastSize = curSize;
         }
+
+        // We need to always have at least coreSize threads.
         if (curSize < pool->_coreSize)
         {
             size_t threadsToSpawn = pool->_coreSize - curSize;
@@ -257,17 +410,19 @@ void *_manage(void *args)
             logger(log, "THREADPOOL");
         }
 
+        // If the job queue is empty, we probably have too many threads, and we start killing one per round of management.
         if (pool->_queue->_len == 0 && curSize > pool->_coreSize)
         {
             task = malloc(sizeof(struct _exec));
             task->fnc = &_die;
             task->arg = NULL;
+
+            // To kill a thread we just push one _die task on the queue, once a thread pops it it will spontanously die.
             syncqueuePush(task, pool->_queue);
             logger(">Killed:1", "THREADPOOL");
-#ifdef TP_DEBUG
-            puts("Killed a thread.");
-#endif
         }
+
+        // If we have jobs in the queue and haven't reached maxSize, we spawn enough threads to reach either maxSize or the queue's length.
         else if (syncqueueLen(*pool->_queue) > 0 && curSize < pool->_maxSize)
         {
             size_t threadsToSpawn = _min(syncqueueLen(*pool->_queue), (pool->_maxSize - curSize));
@@ -278,71 +433,35 @@ void *_manage(void *args)
 
             sprintf(log, ">Spawned:%ld", threadsToSpawn);
             logger(log, "THREADPOOL");
-#ifdef TP_DEBUG
-            printf("Spawned %ld threads.\n", threadsToSpawn);
-#endif
         }
-#ifdef TP_DEBUG
-        puts("Done with round of management.");
-#endif
+
+        // We run a round of management about 100 times a second.
         usleep(10000);
     }
 
+    // Before finishing we try to kill any remaining threads.
     _threadpoolKILL(pool);
 
     return 0;
 }
 
-void _threadCleanup(void *args)
-{
-    struct _cleanup *cln = (struct _cleanup *)args;
-
-    AtomicInt *alive = cln->alive;
-    List *pids = cln->pids;
-    pthread_mutex_t *poolmtx = cln->pidsmtx;
-    pthread_t mine, *el;
-    void *saveptr = NULL;
-    int i = 0, found = 0;
-
-    PTHREAD_CHECK(pthread_mutex_lock(poolmtx));
-    mine = pthread_self();
-
-    while (listScan((void **)&el, &saveptr, pids) == 0)
-    {
-        if (pthread_equal(*el, mine))
-        {
-            found = 1;
-            listRemove(i, (void **)&el, pids);
-            free(el);
-            break;
-        }
-        i++;
-    }
-    if (errno == EOF)
-    {
-        if (pthread_equal(*el, mine))
-        {
-            found = 1;
-            listRemove(i, (void **)&el, pids);
-            free(el);
-        }
-    }
-    PTHREAD_CHECK(pthread_mutex_unlock(poolmtx));
-
-    atomicDec(1, alive);
-    if (!found)
-    {
-        puts("\n\n------------\nWARNING: NOT FOUND!!\n-----------\n");
-    }
-    free(cln);
-    PTHREAD_CHECK(pthread_detach(mine));
-}
-
+/**
+ * @brief A dummy task, which kills the calling thread.
+ *
+ * @param args nothing.
+ */
 void _die(void *args)
 {
     pthread_exit(NULL);
 }
 
+/**
+ * @brief A simple min function, returns the smallest between a and b.
+ *
+ * @param a the first argument.
+ * @param b the second argument.
+ * @return size_t
+ */
 size_t _min(size_t a, size_t b)
 {
     if (a < b)
@@ -350,20 +469,24 @@ size_t _min(size_t a, size_t b)
     return b;
 }
 
+/**
+ * @brief Tries to kill threads cleanly, pushing many _die tasks on the queue which will be executed as soon as the threads are available.
+ *
+ * @param pool
+ */
 void _threadpoolKILL(ThreadPool *pool)
 {
     struct _exec *task;
     int i;
 
+    // We first empty the queue.
     while (syncqueueLen(*pool->_queue) > 0)
     {
         task = (struct _exec *)syncqueuePop(pool->_queue);
         free(task);
     }
 
-#ifdef TP_DEBUG
-    printf("Killing %ld threads\n", atomicGet(pool->alive));
-#endif
+    // Then we push as many _die tasks on the queue as there are alive threads.
     for (i = atomicGet(pool->alive); i > 0; i--)
     {
         UNSAFE_NULL_CHECK(task = malloc(sizeof(struct _exec)));

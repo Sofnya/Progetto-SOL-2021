@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// Those are our default settings.
 char SOCK_NAME[UNIX_PATH_MAX] = "default_address";
 char LOG_FILE[UNIX_PATH_MAX] = "log";
 int64_t CORE_POOL_SIZE = 8;
@@ -15,6 +16,11 @@ int ENABLE_COMPRESSION = 1;
 int VERBOSE_PRINT = 0;
 int POLICY = P_LRU;
 
+/**
+ * @brief Parses given config file, loading all global configuration settings from it.
+ *
+ * @param path the path to the config file.
+ */
 void load_config(char *path)
 {
     FILE *configFile;
@@ -43,6 +49,7 @@ void load_config(char *path)
             continue;
         }
 
+        // Option will be the part before the first =, value the part afterwards.
         option = strtok_r(line, "=", &saveptr);
         value = strtok_r(NULL, "=", &saveptr);
 
@@ -50,6 +57,7 @@ void load_config(char *path)
         {
             printf("Malformed config file on line %d, continuing anyway.\n", lineN);
         }
+        // Then we find our option and parse value accordingly.
         else if (!strcmp(option, "SOCK_NAME"))
         {
             strncpy(SOCK_NAME, value, UNIX_PATH_MAX - 1);
@@ -214,9 +222,12 @@ void load_config(char *path)
     }
     free(line);
     fclose(configFile);
+
+    // At the end we print a summary of loaded configuration.
     puts("Succesfully loaded config:");
     printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\nVERBOSE_PRINT:%d\nLOG_FILE:%s\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, VERBOSE_PRINT, LOG_FILE);
 
+    // Policy is longer as it's not a printable value by default.
     switch (POLICY)
     {
     case (P_RAND):

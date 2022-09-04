@@ -8,16 +8,18 @@
 #include "SERVER/logging.h"
 
 /**
- * @brief Initializes given file with the correct name.
+ * @brief Initializes given File with given name.
  *
- * @param name the pathname of the file
- * @param file the file to initialize
+ * @param name the pathname of the File
+ * @param file the File to initialize
+ * @param isCompressed should be 0 if the File is not to be compressed, 1 otherwise.
  * @return int 0 on success, -1 and sets errno otherwise
  */
 int fileInit(const char *name, int isCompressed, File *file)
 {
     size_t nameSize;
 
+    // Every File has it's own copy of the name, to avoid having to collaborate with other data structures in freeing it afterwars.
     nameSize = strlen(name) + 1;
     SAFE_NULL_CHECK(file->name = malloc(sizeof(char) * nameSize));
     strcpy(file->name, name);
@@ -45,20 +47,30 @@ int fileInit(const char *name, int isCompressed, File *file)
 }
 
 /**
- * @brief Destroys given file, freeing it's resources.
+ * @brief Destroys given File, freeing it's resources.
  *
- * @param file the file to be destroyed
+ * @param file the File to be destroyed
  */
 void fileDestroy(File *file)
 {
+    // We have to do this to avoid destroying the File someone is waiting for a lock on.
+
+    // First enter the waitingLock critical zone.
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+    // Tell all threads the File is getting destroyed.
     file->isDestroyed = 1;
+
+    // And wake them up, they will terminate unsuccesfully.
     while (file->waitingThreads > 0)
     {
         PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
         PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
     }
     PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+
+    // Now we are guaranteed to be the only thread with the File, as this File is no longer accessible from the FileSystem.
+    // As such we can finally destroy it safely.
+
     free((void *)file->name);
     free(file->content);
 
@@ -75,7 +87,7 @@ void fileDestroy(File *file)
 }
 
 /**
- * @brief Initializes given metadata, should be done at file creation.
+ * @brief Initializes given Metadata, should be done at File creation.
  *
  * @param metadata the Metadata to be initialized.
  * @return int 0 on success, -1 on failure.
@@ -83,8 +95,11 @@ void fileDestroy(File *file)
 int metadataInit(const char *name, Metadata *metadata)
 {
     metadata->creationTime = time(NULL);
+
+    // We count creation as an access.
     metadata->lastAccess = time(NULL);
-    metadata->numberAccesses = 0;
+    metadata->numberAccesses = 1;
+
     metadata->size = 0;
 
     SAFE_NULL_CHECK(metadata->metadataLock = malloc(sizeof(pthread_mutex_t)));
@@ -97,7 +112,7 @@ int metadataInit(const char *name, Metadata *metadata)
 }
 
 /**
- * @brief Destroys given metadata, freeing it's resources.
+ * @brief Destroys given Metadata, freeing it's resources.
  *
  * @param metadata the Metadata to be destroyed.
  */
@@ -109,9 +124,9 @@ void metadataDestroy(Metadata *metadata)
 }
 
 /**
- * @brief Atomically updates metadata to represent a fileAccess.
+ * @brief Atomically updates Metadata to represent a fileAccess.
  *
- * @param metadata the metadata to be updated.
+ * @param metadata the Metadata to be updated.
  * @return int 0 on success, -1 on failure.
  */
 int metadataAccess(Metadata *metadata)
@@ -127,9 +142,9 @@ int metadataAccess(Metadata *metadata)
 }
 
 /**
- * @brief Atomically updates metadata with the new size.
+ * @brief Atomically updates Metadata with its new size.
  *
- * @param metadata the metadata to be updated.
+ * @param metadata the Metadata to be updated.
  * @param size  the new size.
  * @return int 0 on success, -1 on failure.
  */
@@ -145,11 +160,11 @@ int metadataUpdateSize(Metadata *metadata, size_t size)
 }
 
 /**
- * @brief Writes the given content to the file.
+ * @brief Writes given content to given File.
  *
  * @param content the content to be written.
  * @param size the size of content.
- * @param file the file to be modified.
+ * @param file the File to modify.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int fileWrite(const void *content, size_t size, File *file)
@@ -169,6 +184,7 @@ int fileWrite(const void *content, size_t size, File *file)
         file->content = NULL;
     }
 
+    // If the File is compressed, we need to recompress it at the end.
     if (file->isCompressed)
     {
         file->isCompressed = 0;
@@ -179,19 +195,21 @@ int fileWrite(const void *content, size_t size, File *file)
 }
 
 /**
- * @brief Appends the given content at the end of the file.
+ * @brief Appends the given content at the end of the File.
  *
  * @param content the content to be written.
  * @param size the size of the new content.
- * @param file the file to be modified.
+ * @param file the File to modify.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int fileAppend(const void *content, size_t size, File *file)
 {
+    // Need to remember if the File was compressed at the start.
     int shouldCompress = file->isCompressed;
 
     metadataAccess(file->metadata);
 
+    // To be able to work on it we first need to decompress it.
     if (file->isCompressed)
     {
         SAFE_ERROR_CHECK(fileDecompress(file));
@@ -204,6 +222,7 @@ int fileAppend(const void *content, size_t size, File *file)
 
     metadataUpdateSize(file->metadata, file->size);
 
+    // If it was compressed at the start, we compress it again now.
     if (shouldCompress)
     {
         return fileCompress(file);
@@ -212,11 +231,11 @@ int fileAppend(const void *content, size_t size, File *file)
 }
 
 /**
- * @brief will read up to bufsize bytes from the files contents inside of the given buf.
+ * @brief Read up to bufsize bytes from the Files contents inside of the given buf.
  *
  * @param buf where the contents will be returned.
  * @param bufsize the size of buf.
- * @param file the file to be read.
+ * @param file the File to read.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
 int fileRead(void *buf, size_t bufsize, File *file)
@@ -224,6 +243,8 @@ int fileRead(void *buf, size_t bufsize, File *file)
     size_t n;
 
     metadataAccess(file->metadata);
+
+    // If File is compressed, we directly decompress it inside of the buffer.
     if (file->isCompressed)
     {
         return uncompress(buf, &bufsize, file->content, file->compressedSize);
@@ -240,10 +261,10 @@ int fileRead(void *buf, size_t bufsize, File *file)
 }
 
 /**
- * @brief Trys to lock the file, without blocking.
+ * @brief Trys to lock given File, without blocking.
  *
- * @param file
- * @return int 0 if succesfull, -1 and sets errno if file is already locked.
+ * @param file the File to lock.
+ * @return int 0 if succesfull, -1 and sets errno if File is already locked.
  */
 int fileTryLock(File *file)
 {
@@ -268,30 +289,40 @@ int fileTryLock(File *file)
 }
 
 /**
- * @brief Locks the file.
+ * @brief Locks given File.
  *
- * @param file
- * @return int
+ * @param file the File to lock.
+ * @return int 0 on success, -1 and sets ERRNO on failure.
  */
 int fileLock(File *file)
 {
     metadataAccess(file->metadata);
 
+    // We need to be careful that the File we are waiting to lock has not been destroyed in the meantime.
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
 
+    // We notify others of our presence.
     file->waitingThreads++;
+
+    // While the File remains locked, and not destroyed, we wait for something to change.
     while (!file->isDestroyed && file->isLocked)
     {
         PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
     }
+    // If the File has been scheduled to be destroyed, we terminate unsuccesfully.
     if (file->isDestroyed)
     {
         file->waitingThreads--;
+
+        // And wake all other threads for safety.
         PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
         PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+
+        errno = ECANCELED;
         return -1;
     }
 
+    // Otherwise just lock the File lol.
     PTHREAD_CHECK(pthread_mutex_lock(file->mtx));
     file->isLocked = 1;
     file->waitingThreads--;
@@ -302,9 +333,9 @@ int fileLock(File *file)
 }
 
 /**
- * @brief Unlocks the file.
+ * @brief Unlocks given File.
  *
- * @param file the file to be unlocked.
+ * @param file the File to be unlocked.
  * @return int 0 on success, -1 on failure.
  */
 int fileUnlock(File *file)
@@ -312,6 +343,8 @@ int fileUnlock(File *file)
     metadataAccess(file->metadata);
 
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+
+    // Remember to notify all threads waiting for a lock.
     PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
     PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
 
@@ -321,9 +354,9 @@ int fileUnlock(File *file)
 }
 
 /**
- * @brief Compresses the files contents.
+ * @brief Compresses given File contents.
  *
- * @param file the file to be compressed.
+ * @param file the File to compress.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int fileCompress(File *file)
@@ -331,14 +364,18 @@ int fileCompress(File *file)
     void *buf;
     char *log;
 
+    // File shouldn't be compressed twice.
     if (file->isCompressed)
     {
         errno = EINVAL;
         return -1;
     }
 
+    // First get a rough bound for our final compressed size.
     file->compressedSize = compressBound(file->size);
     SAFE_NULL_CHECK(buf = malloc(file->compressedSize));
+
+    // Call zlib.
     if (compress(buf, &(file->compressedSize), file->content, file->size) != Z_OK)
     {
         perror("Call to compress failed");
@@ -347,6 +384,8 @@ int fileCompress(File *file)
     }
     free(file->content);
     file->content = buf;
+
+    // Realloc our File's contents to it's actual compressed size, saving space.
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->compressedSize));
     file->isCompressed = 1;
 
@@ -360,9 +399,9 @@ int fileCompress(File *file)
 }
 
 /**
- * @brief Decompresses the files contents.
+ * @brief Decompresses given Files contents.
  *
- * @param file the file to decompress.
+ * @param file the File to decompress.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int fileDecompress(File *file)
@@ -370,12 +409,17 @@ int fileDecompress(File *file)
     void *buf;
     char *log;
 
+    // File should be compressed lol.
     if (!file->isCompressed)
     {
         errno = EINVAL;
         return -1;
     }
+
+    // We keep track of the File's uncompressed size in file->size.
     SAFE_NULL_CHECK(buf = malloc(file->size));
+
+    // Call zlib.
     if (uncompress(buf, &(file->size), file->content, file->compressedSize) != Z_OK)
     {
         perror("Call to uncompress failed");
@@ -384,6 +428,8 @@ int fileDecompress(File *file)
     }
     free(file->content);
     file->content = buf;
+
+    // Just to be safe, realloc to the acutal File size.
     SAFE_NULL_CHECK(file->content = realloc(file->content, file->size));
     file->isCompressed = 0;
 
@@ -400,8 +446,8 @@ int fileDecompress(File *file)
 /**
  * @brief Get the File's size.
  *
- * @param file the file to query.
- * @return size_t the uncompressed size of the file.
+ * @param file the File to query.
+ * @return size_t the uncompressed size of the File.
  */
 size_t getFileSize(File *file)
 {
@@ -409,10 +455,10 @@ size_t getFileSize(File *file)
 }
 
 /**
- * @brief Get the File's contents true memory occupation. If file is not compressed then this is equal to getFileSize, otherwise it will return the commpressed size of the file's contents.
+ * @brief Get the File's contents true memory occupation. If File is not compressed then this is equal to getFileSize, otherwise it will return the commpressed size of the File's contents.
  *
- * @param file the file to query.
- * @return size_t the true current size of the file.
+ * @param file the File to query.
+ * @return size_t the true current size of the File.
  */
 size_t getFileTrueSize(File *file)
 {
@@ -425,8 +471,8 @@ size_t getFileTrueSize(File *file)
 /**
  * @brief Get the File's name.
  *
- * @param file the file to query.
- * @return char* the name of the file
+ * @param file the File to query.
+ * @return char* the name of the File
  */
 const char *getFileName(File *file)
 {

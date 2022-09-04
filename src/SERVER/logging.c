@@ -12,7 +12,7 @@
 #include "COMMON/macros.h"
 
 /**
- * @brief Logs a message, of type type. Type should be machine readable.
+ * @brief Logs a message, of given type. Type should be machine readable.
  *
  * @param msg the message to log.
  * @param type the type of the message.
@@ -31,10 +31,12 @@ int logger(char *msg, char *type)
 
     SAFE_NULL_CHECK(parsed = malloc(strlen(msg) + strlen(type) + 500));
 
+    // Where the magical formatting happens.
     sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%d\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, gettid(), type, msg);
     fwrite(parsed, strlen(parsed), 1, file);
     fflush(file);
 
+    // We can mirror the logging to stdout if needed.
     if (VERBOSE_PRINT)
     {
         printf("%s", parsed);

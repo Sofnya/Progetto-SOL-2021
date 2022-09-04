@@ -14,6 +14,7 @@
 #define LISTLOCK listLock(fs->filesListMtx, __LINE__, __func__)
 #define LISTUNLOCK listUnlock(fs->filesListMtx, __LINE__, __func__)
 
+// These functions are hooks used for debugging purposes. They allow us to print every single lock and unlock operation, and where they appear.
 int listLock(pthread_mutex_t *lock, int line, const char *func)
 {
     int tmp, tmpErrno;
@@ -100,10 +101,12 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
 
     if (maxN > 0)
     {
+        // An hashTable of two times the maximum size should give excellent performance and very few collisions.
         SAFE_ERROR_CHECK(hashTableInit(maxN * 2, fs->filesTable));
     }
     else
     {
+        // If we don't have this limit we guess a reasonable size.
         SAFE_ERROR_CHECK(hashTableInit(4096, fs->filesTable));
     }
 
@@ -126,6 +129,8 @@ void fsDestroy(FileSystem *fs)
     File *curFile;
 
     logger("Destroying fileSystem", "STATUS");
+
+    // We have to individually destroy all the files still present in the FileSystem.
     while (listSize(*fs->filesList) > 0)
     {
         listPop((void **)&cur, fs->filesList);
@@ -203,14 +208,13 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     FileDescriptor *newFd;
     char log[500];
 
-    if (pathname == NULL)
-        puts("\n\n\n\n\n\n\n\n\nSomething very wrong!");
-
+    // The only way to create a file in the FileSystem is to go through here.
     if (flags & O_CREATE)
     {
         PTHREAD_CHECK(LISTLOCK);
         PTHREAD_CHECK(WRITELOCK);
 
+        // We make a file with the given name doesn't already exist.
         if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == 0)
         {
             UNLOCK;
@@ -219,6 +223,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
             return -1;
         }
 
+        // And that creating a new file won't put us over the maximum number of files.
         if (atomicGet(fs->curN) + 1 > fs->maxN)
         {
             UNLOCK;
@@ -228,6 +233,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
             return -1;
         }
 
+        // If everything is fine, we create the file, initialize it, and put it inside of the FileSystem.
         CLEANUP_CHECK(file = malloc(sizeof(File)), NULL, {
             UNLOCK;
             LISTUNLOCK;
@@ -248,6 +254,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
             LISTUNLOCK;
         });
 
+        // Always update the FileSystems size.
         atomicInc(1, fs->curN);
         atomicInc(getFileTrueSize(file), fs->curSize);
 
@@ -261,8 +268,9 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         atomicInc(1, fs->fsStats->filesCreated);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
-        fdInit(file->name, getpid(), FI_READ | FI_WRITE | FI_APPEND, newFd);
+        fdInit(file->name, gettid(), FI_READ | FI_WRITE | FI_APPEND, newFd);
     }
+    // On a normal open we just get the file from the filesTable, if it's present.
     else
     {
         PTHREAD_CHECK(READLOCK);
@@ -275,10 +283,11 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         }
 
         CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
-        fdInit(file->name, getpid(), FI_READ | FI_APPEND, newFd);
+        fdInit(file->name, gettid(), FI_READ | FI_APPEND, newFd);
         PTHREAD_CHECK(UNLOCK);
     }
 
+    // Afterwards we lock the file if needed.
     if (flags & O_LOCK)
     {
         CLEANUP_ERROR_CHECK(lockFile(newFd, fs), { fdDestroy(newFd); free(newFd); });
@@ -461,6 +470,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 
     PTHREAD_CHECK(LISTLOCK);
 
+    // We first calculate how many files we will read, initializing a buffer of the right size.
     amount = atomicGet(fs->curN);
     if (N > 0 && N < amount)
         amount = N;
@@ -468,6 +478,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 
     while (i < amount)
     {
+        // We get the files from the filesList.
         CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(buf); });
 
         curSize = getSize(cur->name, fs);
@@ -491,6 +502,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
             continue;
         }
 
+        // And put them in a container inside of the output buffer.
         CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[i])), {LISTUNLOCK;  free(buf); });
         free(curBuffer);
         i++;
@@ -616,6 +628,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     Metadata *meta;
     int i;
 
+    // Check if the file is locked.
     if (!(fd->flags & FI_LOCK))
     {
         errno = EINVAL;
@@ -627,6 +640,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
 
     i = 0;
 
+    // Gotta remove the file from the filesList.
     while (listScan((void **)&meta, &saveptr, fs->filesList) != -1)
     {
         if (!strcmp(meta->name, fd->name))
@@ -639,6 +653,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
         }
         i++;
     }
+    // listScan always misses the last element of the lsit.
     if (errno == EOF)
     {
         if (!strcmp(meta->name, fd->name))
@@ -652,11 +667,14 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     }
     CLEANUP_PTHREAD_CHECK(LISTUNLOCK, UNLOCK);
 
+    // Remove the actual file from the filesTable
     CLEANUP_ERROR_CHECK(hashTableRemove(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
+    // Update the FileSystem size
     atomicDec(getFileTrueSize(file), fs->curSize);
     atomicDec(1, fs->curN);
 
+    // Free up the file's resources.
     fileDestroy(file);
     free(file);
 
@@ -783,6 +801,7 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
 
     PTHREAD_CHECK(LISTLOCK);
 
+    // Since we have no way of knowing how many files will be removed beforehand, we put them in a dinamic list at first.
     listInit(&tmpFiles);
     toFree = size - (fs->maxSize - atomicGet(fs->curSize));
     if (size > fs->maxSize)
@@ -794,6 +813,7 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
     // If toFree < 0 we still always free at least one element.
     while (toFree > 0 || n <= 0)
     {
+        // missPolicy gives us a chosen file, already locked by us, if one is available.
         if (missPolicy(&curFd, fs) == -1)
         {
             perror("MissPolicy error!");
@@ -805,6 +825,7 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
         tmpSize = getSize(target, fs);
         tmpTrueSize = getTrueSize(target, fs);
 
+        // We put the file in a serializable FileContainer for the future.
         CLEANUP_CHECK(tmpBuf = malloc(tmpSize), NULL, { LISTUNLOCK; });
         CLEANUP_ERROR_CHECK(readFile(curFd, &tmpBuf, tmpSize, fs), { LISTUNLOCK; free(tmpBuf); });
 
@@ -812,6 +833,7 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
         CLEANUP_ERROR_CHECK(containerInit(tmpSize, tmpBuf, target, curFile), { LISTUNLOCK; free(tmpBuf); free(curFile); });
         free(tmpBuf);
 
+        // And add it to the list.
         CLEANUP_ERROR_CHECK(listPush((void *)curFile, &tmpFiles), { LISTUNLOCK; });
         CLEANUP_ERROR_CHECK(removeFile(curFd, fs), { LISTUNLOCK; });
 
@@ -819,11 +841,12 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
         free(curFd);
 
         toFree -= tmpTrueSize;
-
         n++;
     }
 
     PTHREAD_CHECK(LISTUNLOCK);
+
+    // Now that we have our list of FileContainers we put it in a buffer of the right size
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * tmpFiles.size));
 
     for (i = 0; i < n; i++)
@@ -842,6 +865,8 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
     listDestroy(&tmpFiles);
 
     atomicInc(1, fs->fsStats->capMisses);
+
+    // If no files were removed something went wrong.
     if (n == 0)
         n = -1;
     return n;
