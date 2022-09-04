@@ -13,6 +13,7 @@ typedef struct _connState
     HashTable *fds;
     FileSystem *fs;
     char uuid[36];
+    FileDescriptor *lockedFile;
 } ConnState;
 
 int connStateInit(FileSystem *fs, ConnState *state);

@@ -122,8 +122,17 @@ int metadataAccess(Metadata *metadata)
     metadata->lastAccess = time(NULL);
 
     PTHREAD_CHECK(pthread_mutex_unlock(metadata->metadataLock));
+
+    return 0;
 }
 
+/**
+ * @brief Atomically updates metadata with the new size.
+ *
+ * @param metadata the metadata to be updated.
+ * @param size  the new size.
+ * @return int 0 on success, -1 on failure.
+ */
 int metadataUpdateSize(Metadata *metadata, size_t size)
 {
     PTHREAD_CHECK(pthread_mutex_lock(metadata->metadataLock));
@@ -131,6 +140,8 @@ int metadataUpdateSize(Metadata *metadata, size_t size)
     metadata->size = size;
 
     PTHREAD_CHECK(pthread_mutex_unlock(metadata->metadataLock));
+
+    return 0;
 }
 
 /**
@@ -293,8 +304,8 @@ int fileLock(File *file)
 /**
  * @brief Unlocks the file.
  *
- * @param file
- * @return int
+ * @param file the file to be unlocked.
+ * @return int 0 on success, -1 on failure.
  */
 int fileUnlock(File *file)
 {
@@ -389,8 +400,8 @@ int fileDecompress(File *file)
 /**
  * @brief Get the File's size.
  *
- * @param file
- * @return size_t
+ * @param file the file to query.
+ * @return size_t the uncompressed size of the file.
  */
 size_t getFileSize(File *file)
 {
@@ -400,8 +411,8 @@ size_t getFileSize(File *file)
 /**
  * @brief Get the File's contents true memory occupation. If file is not compressed then this is equal to getFileSize, otherwise it will return the commpressed size of the file's contents.
  *
- * @param file
- * @return size_t
+ * @param file the file to query.
+ * @return size_t the true current size of the file.
  */
 size_t getFileTrueSize(File *file)
 {
@@ -414,8 +425,8 @@ size_t getFileTrueSize(File *file)
 /**
  * @brief Get the File's name.
  *
- * @param file
- * @return char*
+ * @param file the file to query.
+ * @return char* the name of the file
  */
 const char *getFileName(File *file)
 {

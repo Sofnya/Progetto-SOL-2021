@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <uuid/uuid.h>
+#include <string.h>
 
 #include "SERVER/connstate.h"
 #include "SERVER/filesystem.h"
@@ -14,6 +15,7 @@ int connStateInit(FileSystem *fs, ConnState *state)
     state->fs = fs;
     uuid_generate(tmp);
     uuid_unparse(tmp, state->uuid);
+    state->lockedFile = NULL;
 
     return hashTableInit(16, state->fds);
 }
@@ -33,6 +35,10 @@ void connStateDestroy(ConnState *state)
         fdDestroy(fd);
         free(fd);
     }
+    if (state->lockedFile != NULL)
+    {
+        free(state->lockedFile);
+    }
 
     hashTableDestroy(state->fds);
     free(state->fds);
@@ -42,6 +48,19 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
 {
     FileDescriptor *fd, *tmp;
     int capMiss = 0;
+
+    if (flags & O_LOCK)
+    {
+        if (state.lockedFile != NULL)
+        {
+            if (unlockFile(state.lockedFile, state.fs) != 0)
+            {
+                errno = EINVAL;
+                return -1;
+            }
+            state.lockedFile = NULL;
+        }
+    }
 
     if (hashTableGet(path, (void **)&tmp, *state.fds) != -1)
     {
@@ -65,6 +84,10 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         }
     }
 
+    if (flags & O_LOCK)
+    {
+        state.lockedFile = fd;
+    }
     if (capMiss)
     {
         hashTablePut((char *)fd->name, fd, *state.fds);
@@ -79,6 +102,13 @@ int conn_closeFile(const char *path, ConnState state)
 {
     FileDescriptor *fd;
 
+    if (state.lockedFile != NULL)
+    {
+        if (!strcmp(path, state.lockedFile->name))
+        {
+            state.lockedFile = NULL;
+        }
+    }
     if (hashTableRemove(path, (void **)&fd, *state.fds) == -1)
     {
         errno = EINVAL;
@@ -204,6 +234,14 @@ int conn_removeFile(const char *path, ConnState state)
         return -1;
     }
 
+    if (state.lockedFile != NULL)
+    {
+        if (!strcmp(path, state.lockedFile->name))
+        {
+            state.lockedFile = NULL;
+        }
+    }
+
     tmp = removeFile(fd, state.fs);
     if (tmp == -1)
     {
@@ -219,10 +257,24 @@ int conn_lockFile(const char *path, ConnState state)
 {
     FileDescriptor *fd;
 
+    if (state.lockedFile != NULL)
+    {
+        if (unlockFile(state.lockedFile, state.fs) != 0)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        state.lockedFile = NULL;
+    }
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {
         errno = EINVAL;
         return -1;
+    }
+
+    if (state.lockedFile == NULL)
+    {
+        state.lockedFile = fd;
     }
 
     return lockFile(fd, state.fs);
@@ -231,6 +283,14 @@ int conn_lockFile(const char *path, ConnState state)
 int conn_unlockFile(const char *path, ConnState state)
 {
     FileDescriptor *fd;
+
+    if (state.lockedFile != NULL)
+    {
+        if (!strcmp(path, state.lockedFile->name))
+        {
+            state.lockedFile = NULL;
+        }
+    }
 
     if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
     {

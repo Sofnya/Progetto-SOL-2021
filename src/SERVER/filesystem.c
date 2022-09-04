@@ -63,11 +63,11 @@ int unlock(pthread_rwlock_t *lock, int line, const char *func)
 }
 
 /**
- * @brief Initializes the given FileSystem with max number of files maxN and maximum memory occupation maxSize.
+ * @brief Initializes the given FileSystem with max number of Files maxN and maximum memory occupation maxSize.
  *
- * @param maxN the maximum number of files in the filesystem, -1 means unlimited.
- * @param maxSize the maximum size the filesystem should take up, -1 means unlimited.
- * @param fs
+ * @param maxN the maximum number of Files in the FileSystem, -1 means unlimited.
+ * @param maxSize the maximum size the FileSystem should take up, -1 means unlimited.
+ * @param fs the FileSystem to initialize.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
 int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
@@ -116,7 +116,7 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
 }
 
 /**
- * @brief Destroys the given FileSystem, cleaning up it's memory.
+ * @brief Destroys the given FileSystem, freeing it's resources.
  *
  * @param fs the FileSystem to be destroyed.
  */
@@ -155,6 +155,15 @@ void fsDestroy(FileSystem *fs)
     free(fs->fsStats);
 }
 
+/**
+ * @brief Initializes given FileDescriptor with given flags and name.
+ *
+ * @param name the name of the new FileDescriptor.
+ * @param pid the pid of the calling process.
+ * @param flags the flags of the FileDescriptor.
+ * @param fd the FileDescriptor to be initialized.
+ * @return int 0 on success, -1 on failure.
+ */
 int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd)
 {
     size_t nameLen = strlen(name) + 1;
@@ -168,6 +177,11 @@ int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd)
     return 0;
 }
 
+/**
+ * @brief Destroys given FileDescriptor, freeing it's resources.
+ *
+ * @param fd the FileDescriptor to be destroyed.
+ */
 void fdDestroy(FileDescriptor *fd)
 {
     free(fd->name);
@@ -175,13 +189,13 @@ void fdDestroy(FileDescriptor *fd)
 }
 
 /**
- * @brief Opens a file, returning a FileDescriptor with given flags.
+ * @brief Opens a File, returning a FileDescriptor with given flags.
  *
- * @param pathname
- * @param flags
- * @param fd
- * @param fs
- * @return int
+ * @param pathname the name of the File to open.
+ * @param flags can be O_CREATE to create a new file, O_LOCK to lock the file on open, both ORED together or neither.
+ * @param fd where the FileDescriptor will be returned.
+ * @param fs the FileSystem containing the chosen File.
+ * @return int 0 on success, -1 on failure.
  */
 int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
 {
@@ -275,6 +289,13 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     return 0;
 }
 
+/**
+ * @brief Closes a File.
+ *
+ * @param fd a FileDescriptor gotten from opening the chosen File.
+ * @param fs the FileSystem containing the chosen file.
+ * @return int 0 on success, -1 on failure
+ */
 int closeFile(FileDescriptor *fd, FileSystem *fs)
 {
     if (fd->flags & FI_LOCK)
@@ -291,13 +312,13 @@ int closeFile(FileDescriptor *fd, FileSystem *fs)
 }
 
 /**
- * @brief Reads the contents of the file in fd, and puts them in buf.
+ * @brief Reads the contents of the File in fd, and puts them in buf.
  *
- * @param fd a file descriptor gotten from opening the chosen file.
+ * @param fd a FileDescriptor gotten from opening the chosen File.
  * @param buf the buffer in which the file's contents will be stored.
  * @param size the size of buf, if not large enough to hold all of the file's contents an error will be returned.
  * @param fs the FileSystem containing the chosen file.
- * @return int 0 on a success, -1 and sets errno on failure.
+ * @return int 0 on success, -1 and sets errno on failure.
  */
 int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
 {
@@ -335,13 +356,13 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
 }
 
 /**
- * @brief Writes the contents of buffer buf to the file described by fd.
+ * @brief Writes the contents of buffer buf to the File described by fd.
  *
- * @param fd a file descriptor gotten from opening the chosen file.
- * @param buf the buffer from which the contents will be copyed.
- * @param size the size of buf, the file will be resized accordingly.
- * @param fs the FileSystem containing the chosen file.
- * @return int 0 on a success, -1 and sets errno on failure.
+ * @param fd a FileDescriptor gotten from opening the chosen File.
+ * @param buf the buffer from which the contents will be copied.
+ * @param size the size of buf, the File will be resized accordingly.
+ * @param fs the FileSystem containing the chosen File.
+ * @return int 0 on success, -1 and sets errno on failure.
  */
 int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 {
@@ -378,13 +399,13 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 }
 
 /**
- * @brief Appends the contents of buf to the file described by fd.
+ * @brief Appends the contents of buf to the File described by fd.
  *
- * @param fd a file descriptor gotten from opening the chosen file.
+ * @param fd a FileDescriptor gotten from opening the chosen File.
  * @param buf the buffer from which the contents will be copyed.
  * @param size the size of buf.
- * @param fs the FileSystem containing the chosen file.
- * @return int 0 on a success, -1 and sets errno on failure.
+ * @param fs the FileSystem containing the chosen File.
+ * @return int 0 on success, -1 and sets errno on failure.
  */
 int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 {
@@ -423,12 +444,12 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 }
 
 /**
- * @brief Reads N files in the given buffer. Buf and size will be malloced, so remember to free them after use.
+ * @brief Reads N Files in the given buffer. Buf and size will be malloced, so remember to free them after use.
  *
- * @param N The number of files to read, if N < 0 reads all of the servers files.
- * @param buf Where the files will be stored, will become an array of buffers.
- * @param fs The fileSystem to query.
- * @return int on success, the number of files actually read, on error -1 and sets errno.
+ * @param N The number of Files to read, if N < 0 reads all of the servers Files.
+ * @param buf Where the Files will be stored, will become an array of buffers.
+ * @param fs The FileSystem to query.
+ * @return int on success, the number of Files actually read, on error -1 and sets errno.
  */
 int readNFiles(int N, FileContainer **buf, FileSystem *fs)
 {
@@ -480,6 +501,14 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     return amount;
 }
 
+/**
+ * @brief Locks a File, blocking untill success.
+ *
+ * @param fd a FileDescriptor representing the File to be locked.
+ * @param fs the FileSystem containing given File.
+ * @return int 0 on success, -1 on failure.
+
+ */
 int lockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
@@ -508,6 +537,13 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
     return 0;
 }
 
+/**
+ * @brief Unlocks a File.
+ *
+ * @param fd a FileDescriptor representing the File to be unlocked.
+ * @param fs the FileSystem containing given File.
+ * @return int 0 on success, -1 on failure.
+ */
 int unlockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
@@ -530,6 +566,13 @@ int unlockFile(FileDescriptor *fd, FileSystem *fs)
     return 0;
 }
 
+/**
+ * @brief Tries to lock given file non blockingly, will return 0 if it succeded in locking the file, and -1 if the file wasn't available, or on error.
+ *
+ * @param fd a FileDescriptor representing the File to be locked.
+ * @param fs the FileSystem containing given File.
+ * @return int 0 on a successfull lock, -1 on error or an unsuccessfull lock.
+ */
 int tryLockFile(FileDescriptor *fd, FileSystem *fs)
 {
     File *file;
@@ -620,15 +663,17 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     PTHREAD_CHECK(UNLOCK);
 
     atomicInc(1, fs->fsStats->remove);
+    // We count a remove as an unlock to get an even number of locks/unlocks. Otherwise when one locks a file and then removes it the unlock is lost.
+    atomicInc(1, fs->fsStats->unlock);
 
     return 0;
 }
 
 /**
- * @brief Get the size of the file of chosen name.
+ * @brief Get the uncompressed size of the file of chosen name.
  *
  * @param pathname the name of the file.
- * @param fs the fileSystem containing the file
+ * @param fs the FileSystem containing the file
  * @return size_t the size of the file if it exists, 0 and sets errno otherwise.
  */
 size_t getSize(const char *pathname, FileSystem *fs)
@@ -666,7 +711,7 @@ size_t getSize(const char *pathname, FileSystem *fs)
  * @brief Get the true size of the file of chosen name.
  *
  * @param pathname the name of the file.
- * @param fs the fileSystem containing the file
+ * @param fs the FileSystem containing the file
  * @return size_t the size of the file if it exists, 0 and sets errno otherwise.
  */
 
@@ -694,11 +739,23 @@ size_t getTrueSize(const char *pathname, FileSystem *fs)
     return getFileTrueSize(file);
 }
 
+/**
+ * @brief Get the current size of the FileSystem.
+ *
+ * @param fs the FileSystem to query.
+ * @return size_t the current number of files in the FileSystem.
+ */
 size_t getCurSize(FileSystem *fs)
 {
     return atomicGet(fs->curSize);
 }
 
+/**
+ * @brief Get the current number of files inside of the FileSystem.
+ *
+ * @param fs the FileSystem to query.
+ * @return size_t the current number of files in the FileSystem.
+ */
 size_t getCurN(FileSystem *fs)
 {
     return atomicGet(fs->curN);
@@ -790,6 +847,12 @@ int freeSpace(size_t size, FileContainer **buf, FileSystem *fs)
     return n;
 }
 
+/**
+ * @brief For internal use only, transforms a single Metadata in a human readable string which must be freed afterwards.
+ *
+ * @param el must point to a valid Metadata, the Metadata to print.
+ * @return char* a string representing given Metadata, must be freed after use.
+ */
 char *_metadataPrinter(void *el)
 {
     Metadata *data = (Metadata *)el;
@@ -802,6 +865,11 @@ char *_metadataPrinter(void *el)
     return result;
 }
 
+/**
+ * @brief Prints a human readable account of the files in the given FileSystem.
+ *
+ * @param fs the FileSystem to print.
+ */
 void prettyPrintFiles(FileSystem *fs)
 {
     LISTLOCK;
@@ -813,6 +881,11 @@ void prettyPrintFiles(FileSystem *fs)
     LISTUNLOCK;
 }
 
+/**
+ * @brief Prints a human readable account of given FSStats.
+ *
+ * @param stats the FSStats to print.
+ */
 void prettyPrintStats(FSStats *stats)
 {
     puts("\n---------- FileSystem Stats ----------");
@@ -824,6 +897,12 @@ void prettyPrintStats(FSStats *stats)
     puts("---------------- End -----------------\n");
 }
 
+/**
+ * @brief Initializes given FSStats.
+ *
+ * @param stats the FSStats to be initialized.
+ * @return int 0 on success, -1 on failure.
+ */
 int statsInit(FSStats *stats)
 {
     SAFE_NULL_CHECK(stats->maxSize = malloc(sizeof(AtomicInt)));
@@ -860,7 +939,15 @@ int statsInit(FSStats *stats)
 
     SAFE_NULL_CHECK(stats->sizeMtx = malloc(sizeof(pthread_mutex_t)));
     PTHREAD_CHECK(pthread_mutex_init(stats->sizeMtx, NULL));
+
+    return 0;
 }
+
+/**
+ * @brief Destroys given FSStats, freeing it's resources.
+ *
+ * @param stats the FSStats to be destroyed.
+ */
 void statsDestroy(FSStats *stats)
 {
     atomicDestroy(stats->maxSize);
@@ -899,6 +986,14 @@ void statsDestroy(FSStats *stats)
     free(stats->sizeMtx);
 }
 
+/**
+ * @brief Updates FSStats maxSize and/or maxN, if given curSize or curN are bigger.
+ *
+ * @param stats the FSStats to update.
+ * @param curSize the current size of the fileSystem.
+ * @param curN the current number of files in the fileSystem.
+ * @return int 0 on success, -1 on failure.
+ */
 int statsUpdateSize(FSStats *stats, size_t curSize, size_t curN)
 {
     PTHREAD_CHECK(pthread_mutex_lock(stats->sizeMtx));
@@ -911,4 +1006,6 @@ int statsUpdateSize(FSStats *stats, size_t curSize, size_t curN)
         atomicPut(curN, stats->maxN);
     }
     PTHREAD_CHECK(pthread_mutex_unlock(stats->sizeMtx));
+
+    return 0;
 }
