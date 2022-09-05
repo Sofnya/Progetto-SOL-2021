@@ -260,6 +260,14 @@ void *_execLoop(void *args)
     void (*curFunc)(void *);
     void *curArgs;
 
+    // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
+    sigset_t sigmask;
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGHUP);
+    sigaddset(&sigmask, SIGQUIT);
+    pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
     // First we parse the given args.
     bool volatile *terminate = ((struct _execLoopArgs *)args)->terminate;
     SyncQueue *queue = ((struct _execLoopArgs *)args)->queue;
@@ -389,6 +397,14 @@ void *_manage(void *args)
     struct _exec *task;
     size_t i;
     char log[500];
+
+    // All threads except the main root thread should ignore signals, and let the root thread handle termination.
+    sigset_t sigmask;
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGHUP);
+    sigaddset(&sigmask, SIGQUIT);
+    pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
 
     // stability controls how many rounds should go a certain way before the manager reacts.
     const int stability = 5;

@@ -13,10 +13,12 @@
 #include "COMMON/macros.h"
 
 #define UNIX_PATH_MAX 108
-#define SOCKNAME "fakeAddress"
+#define SOCKNAME "defaultAddress"
 #define N 100
 
 int writeNFiles(char *dir, int n, char *missDirName, int delay);
+
+char *lockedFile = NULL;
 
 int main(int argc, char *argv[])
 {
@@ -24,16 +26,17 @@ int main(int argc, char *argv[])
     int n;
     long delay = 0;
     char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
-    HashTable openFiles;
     void *flag;
 
+    // Ignore SIGPIPE to avoid problems with read/writes on pipes.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
-    hashTableInit(50, &openFiles);
 
+    // Now start parsing all commands.
     while ((opt = getopt(argc, argv, "hf:w:W:D:r:R::d:t:l:u:c:p")) != -1)
     {
         switch (opt)
         {
+            // Help.
         case ('h'):
         {
             puts("Usage:");
@@ -52,6 +55,7 @@ int main(int argc, char *argv[])
             puts("client -p enables verbose printing");
             exit(EXIT_SUCCESS);
         }
+        // Connect.
         case ('f'):
         {
             struct timespec abstime;
@@ -69,9 +73,11 @@ int main(int argc, char *argv[])
             openConnection(sockname, 100, abstime);
             break;
         }
+        // WriteN.
         case ('w'):
         {
             n = 0;
+            // Parse the argument to find dirname and the number of elements to write.
             if (strchr(optarg, ',') != NULL)
             {
                 tmp = strtok(optarg, ",");
@@ -93,6 +99,7 @@ int main(int argc, char *argv[])
             printf("Wrote %d files\n", writeNFiles(tmp, n, missDirName, delay));
             break;
         }
+        // Write.
         case ('W'):
         {
             char *saveptr;
@@ -100,23 +107,29 @@ int main(int argc, char *argv[])
             do
             {
                 usleep(delay);
+
+                // Try to create the file first.
                 if ((create_file(tmp, O_CREATE | O_LOCK, missDirName) == -1) && verbose)
                 {
                     printf("Couldn't create file %s\n", tmp);
                     continue;
                 }
                 usleep(delay);
+
+                // If file was successfully created, write it's contents.
                 if (writeFile(tmp, missDirName) == -1 && verbose)
                 {
                     printf("Couldn't write file %s\n", tmp);
                 }
 
+                // Finally close the file.
                 usleep(delay);
                 closeFile(tmp);
 
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
+        // Set MissDir.
         case ('D'):
         {
             missDirName = optarg;
@@ -127,15 +140,19 @@ int main(int argc, char *argv[])
             }
             break;
         }
+        // Read.
         case ('r'):
         {
             void *buf;
             char *saveptr;
             size_t size;
+
+            // Need to read all files in the args, which are comma-separated.
             tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
-                if (hashTableGet(tmp, &flag, openFiles) == -1)
+                // Open the file if it's not already our locked file.
+                if (lockedFile != NULL && !(strcmp(tmp, lockedFile)))
                 {
                     usleep(delay);
                     if (openFile(tmp, 0) == -1)
@@ -147,6 +164,8 @@ int main(int argc, char *argv[])
                         continue;
                     }
                 }
+
+                // The actual read.
                 usleep(delay);
                 if (readFile(tmp, &buf, &size) == -1)
                 {
@@ -157,10 +176,13 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
+                    // If we managed to read the file, write it to disk inside readDir.
                     __writeBufToDir(buf, size, tmp, readDirName);
                     free(buf);
                 }
-                if (hashTableGet(tmp, &flag, openFiles) == -1)
+
+                // If the file wasn't locked before, then we opened it for the read, and should now close it again.
+                if (lockedFile == NULL || strcmp(tmp, lockedFile))
                 {
                     usleep(delay);
                     if (closeFile(tmp) == -1 && verbose)
@@ -175,7 +197,7 @@ int main(int argc, char *argv[])
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
-
+        // ReadN.
         case ('R'):
         {
             n = 0;
@@ -191,6 +213,7 @@ int main(int argc, char *argv[])
             readNFiles(n, readDirName);
             break;
         }
+        // Set readDir.
         case ('d'):
         {
             readDirName = optarg;
@@ -200,6 +223,7 @@ int main(int argc, char *argv[])
             }
             break;
         }
+        // Set delay.
         case ('t'):
         {
             delay = atol(optarg);
@@ -210,9 +234,12 @@ int main(int argc, char *argv[])
             delay *= 1000;
             break;
         }
+        // Lock file.
         case ('l'):
         {
             char *saveptr;
+
+            // Need to lock all comma-separated files.
             tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
@@ -235,14 +262,24 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    hashTablePut(tmp, NULL, openFiles);
+                    // Keep track of our locked file.
+                    if (lockedFile != NULL)
+                    {
+                        free(lockedFile);
+                        lockedFile = NULL;
+                    }
+                    UNSAFE_NULL_CHECK(lockedFile = malloc((strlen(tmp) + 1) * sizeof(char)));
+                    strcpy(lockedFile, tmp);
                 }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
+        // Unlock.
         case ('u'):
         {
             char *saveptr;
+
+            // Unlock all comma-separated files.
             tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
@@ -260,18 +297,27 @@ int main(int argc, char *argv[])
                     usleep(delay);
                     closeFile(tmp);
 
-                    hashTableRemove(tmp, NULL, openFiles);
+                    // Once unlocked and closed, remove it from locked file.
+                    if (lockedFile != NULL)
+                    {
+                        free(lockedFile);
+                        lockedFile = NULL;
+                    }
                 }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
+        // Remove.
         case ('c'):
         {
             char *saveptr;
+
+            // Remove all comma-separated-files.
             tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
-                if (hashTableGet(tmp, &flag, openFiles) == -1)
+                // If the file isn't already locked, open and lock it.
+                if (lockedFile == NULL || !strcmp(tmp, lockedFile))
                 {
                     usleep(delay);
                     if (openFile(tmp, O_LOCK) == -1)
@@ -281,6 +327,16 @@ int main(int argc, char *argv[])
                             printf("Couldn't open file %s for removal.\n", tmp);
                         }
                         continue;
+                    }
+                    else
+                    {
+                        if (lockedFile != NULL)
+                        {
+                            free(lockedFile);
+                            lockedFile = NULL;
+                        }
+                        UNSAFE_NULL_CHECK(lockedFile = malloc((strlen(tmp) + 1) * sizeof(char)));
+                        strcpy(lockedFile, tmp);
                     }
                     if (verbose)
                     {
@@ -301,10 +357,18 @@ int main(int argc, char *argv[])
                     printf("Removed file %s\n", tmp);
                 }
 
+                // If we managed to remove our locked file, update it.
+                if (lockedFile != NULL)
+                {
+                    free(lockedFile);
+                    lockedFile = NULL;
+                }
+
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             puts(optarg);
             break;
         }
+        // Enable verbose print.
         case ('p'):
         {
             puts("Verbose print activated");
@@ -325,7 +389,10 @@ int main(int argc, char *argv[])
         usleep(delay);
         closeConnection(sockname);
     }
-    hashTableDestroy(&openFiles);
+    if (lockedFile != NULL)
+    {
+        free(lockedFile);
+    }
 }
 
 /**
@@ -382,6 +449,14 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
                 }
                 free(path);
                 continue;
+            }
+            else
+            {
+                if (lockedFile != NULL)
+                {
+                    free(lockedFile);
+                    lockedFile = NULL;
+                }
             }
             usleep(delay);
             if (writeFile(path, missDirName) == -1)

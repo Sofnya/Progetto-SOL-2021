@@ -891,7 +891,7 @@ char *_metadataPrinter(void *el)
         return "ERROR";
     }
 
-    sprintf(result, "Name: %-30s\tSize:%-10ld\tCreation Time:%-10ld\tLast Access Time:%-10ld\tAccess Count:%-10ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
+    sprintf(result, "Name: %-30s\tSize: %-10ld\tCreation Time: %-10ld\tLast Access Time: %-10ld\tAccess Count: %ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
 
     return result;
 }
