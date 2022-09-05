@@ -3,6 +3,10 @@
 #include <errno.h>
 #include <stdio.h>
 #include <signal.h>
+#include <time.h>
+
+#include <unistd.h>
+#include <sys/syscall.h>
 
 #include "COMMON/helpers.h"
 #include "COMMON/macros.h"
@@ -95,4 +99,29 @@ void *_innerCall(void *arg)
     *(exec.isDone) = 1;
     NULL_PTHREAD_CHECK(pthread_cond_signal(exec.done));
     return NULL;
+}
+
+/**
+ * @brief Generates an UUID.
+ *
+ * @param uuid where the UUID will be generated.
+ */
+void genUUID(char *uuid)
+{
+    sprintf(uuid, "%x%x-%x-%x-%x-%x%x%x",
+            rand(), rand(),               // Generates a 64-bit Hex number
+            rand(),                       // Generates a 32-bit Hex number
+            ((rand() & 0x0fff) | 0x4000), // Generates a 32-bit Hex number of the form 4xxx (4 indicates the UUID version)
+            rand() % 0x3fff + 0x8000,     // Generates a 32-bit Hex number in the range [0x8000, 0xbfff]
+            rand(), rand(), rand());      // Generates a 96-bit Hex number
+};
+
+/**
+ * @brief Gets the current thread id.
+ *
+ * @return long the current thread id.
+ */
+long getTID()
+{
+    return syscall(SYS_gettid);
 }

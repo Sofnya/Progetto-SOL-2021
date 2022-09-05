@@ -9,8 +9,8 @@
 
 #include "CLIENT/api.h"
 #include "CLIENT/clientHelpers.h"
-#include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
+#include "COMMON/helpers.h"
 
 #define UNIX_PATH_MAX 108
 #define SOCKNAME "defaultAddress"

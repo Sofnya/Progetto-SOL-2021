@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,6 +6,7 @@
 
 #include "SERVER/filesystem.h"
 #include "COMMON/macros.h"
+#include "COMMON/helpers.h"
 #include "SERVER/policy.h"
 #include "SERVER/logging.h"
 
@@ -271,7 +270,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         atomicInc(1, fs->fsStats->filesCreated);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
-        fdInit(file->name, gettid(), FI_READ | FI_WRITE | FI_APPEND, newFd);
+        fdInit(file->name, getTID(), FI_READ | FI_WRITE | FI_APPEND, newFd);
     }
     // On a normal open we just get the file from the filesTable, if it's present.
     else
@@ -286,7 +285,7 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         }
 
         CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
-        fdInit(file->name, gettid(), FI_READ | FI_APPEND, newFd);
+        fdInit(file->name, getTID(), FI_READ | FI_APPEND, newFd);
         PTHREAD_CHECK(UNLOCK);
     }
 

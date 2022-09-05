@@ -17,4 +17,8 @@ int timeoutCall(int (*fnc)(void *), void *arg, struct timespec maxWait);
 
 void *_innerCall(void *exec);
 
+void genUUID(char *uuid);
+
+long getTID();
+
 #endif

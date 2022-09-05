@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -10,6 +8,7 @@
 #include "SERVER/logging.h"
 #include "SERVER/globals.h"
 #include "COMMON/macros.h"
+#include "COMMON/helpers.h"
 
 /**
  * @brief Logs a message, of given type. Type should be machine readable.
@@ -32,7 +31,7 @@ int logger(char *msg, char *type)
     SAFE_NULL_CHECK(parsed = malloc(strlen(msg) + strlen(type) + 500));
 
     // Where the magical formatting happens.
-    sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%d\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, gettid(), type, msg);
+    sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%ld\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, getTID(), type, msg);
     fwrite(parsed, strlen(parsed), 1, file);
     fflush(file);
 

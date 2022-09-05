@@ -1,7 +1,10 @@
+#define _GNU_SOURCE
+
 #include <string.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #ifdef DEBUG
 #include <assert.h>

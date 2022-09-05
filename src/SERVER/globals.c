@@ -169,7 +169,7 @@ void load_config(char *path)
         }
         else if (!strcmp(option, "POLICY"))
         {
-            if (!strncmp(value, "RANDOM*", 7))
+            if (!strncmp(value, "RANDOM", 6))
             {
                 POLICY = P_RAND;
             }

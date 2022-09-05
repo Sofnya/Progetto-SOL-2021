@@ -15,6 +15,7 @@
 #include "COMMON/macros.h"
 #include "COMMON/hashtable.h"
 #include "COMMON/fileContainer.h"
+#include "COMMON/helpers.h"
 #include "SERVER/filesystem.h"
 #include "SERVER/files.h"
 

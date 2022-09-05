@@ -2,7 +2,6 @@
 #define CONNSTATE_H
 
 #include <stdint.h>
-#include <uuid/uuid.h>
 
 #include "COMMON/fileContainer.h"
 #include "COMMON/hashtable.h"
@@ -12,7 +11,7 @@ typedef struct _connState
 {
     HashTable *fds;
     FileSystem *fs;
-    char uuid[36];
+    char uuid[100];
     FileDescriptor *lockedFile;
 } ConnState;
 

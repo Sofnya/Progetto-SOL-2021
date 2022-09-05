@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -g -Wall -pthread  -I ../include 
-LIBRARY = -luuid -lz -L ../deps
+CFLAGS = -std=gnu11 -g -Wall -pthread  -I ../include 
+LIBRARY = -lz -L ../deps
 obj_dir = ../obj/
 client_objects = $(obj_dir)CLIENT/api.o $(obj_dir)CLIENT/client.o $(obj_dir)CLIENT/clientHelpers.o
 common_objects = $(obj_dir)COMMON/atomicint.o $(obj_dir)COMMON/fileContainer.o $(obj_dir)COMMON/hashtable.o $(obj_dir)COMMON/helpers.o $(obj_dir)COMMON/list.o $(obj_dir)COMMON/message.o $(obj_dir)COMMON/murmur3.o $(obj_dir)COMMON/syncqueue.o  

@@ -1,12 +1,12 @@
 #include <stdlib.h>
 #include <errno.h>
-#include <uuid/uuid.h>
 #include <string.h>
 
 #include "SERVER/connstate.h"
 #include "SERVER/filesystem.h"
 #include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
+#include "COMMON/helpers.h"
 
 /**
  * @brief Initializes given ConnState with given FileSystem.
@@ -17,13 +17,12 @@
  */
 int connStateInit(FileSystem *fs, ConnState *state)
 {
-    uuid_t tmp;
     SAFE_NULL_CHECK(state->fds = malloc(sizeof(HashTable)));
     state->fs = fs;
 
     // Every ConnState has it's own UUID.
-    uuid_generate(tmp);
-    uuid_unparse(tmp, state->uuid);
+    genUUID(state->uuid);
+
     state->lockedFile = NULL;
 
     // We don't need a huge hashTable for every connection. Assuming clients tend to open less than 8 files at a time seems reasonable.

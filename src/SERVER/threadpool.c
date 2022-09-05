@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <pthread.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -9,6 +7,7 @@
 #include "SERVER/threadpool.h"
 #include "COMMON/macros.h"
 #include "SERVER/logging.h"
+#include "COMMON/helpers.h"
 
 /**
  * @brief Initializes given ThreadPool with given core and max size.

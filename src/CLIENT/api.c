@@ -12,6 +12,7 @@
 #include "COMMON/macros.h"
 #include "COMMON/fileContainer.h"
 #include "CLIENT/clientHelpers.h"
+#include "COMMON/helpers.h"
 
 #define UNIX_PATH_MAX 108
 
