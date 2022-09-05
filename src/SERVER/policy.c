@@ -94,6 +94,17 @@ long biggHeuristic(void *el)
 }
 
 /**
+ * @brief Implements a least frequently used policy, choosing the files with the least accesses/second since their creation.
+ */
+long lfuHeuristic(void *el)
+{
+    Metadata *target = (Metadata *)el;
+    double lifespan = difftime(time(NULL), target->creationTime);
+
+    return target->numberAccesses / (long)lifespan;
+}
+
+/**
  * @brief Opens and locks a File chosen to be removed from the fileserver on a capacity miss.
  *
  * @param fd where the FileDescriptor will be returned.
@@ -143,6 +154,10 @@ int missPolicy(FileDescriptor **fd, FileSystem *fs)
 
     case (P_BIGG):
         heuristic = &biggHeuristic;
+        break;
+
+    case (P_LFU):
+        heuristic = &lfuHeuristic;
         break;
 
     default:

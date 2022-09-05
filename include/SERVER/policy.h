@@ -12,6 +12,7 @@
 #define P_MU 0100
 #define P_SMOL 0200
 #define P_BIGG 0400
+#define P_LFU 01000
 
 int missPolicy(FileDescriptor **fd, FileSystem *fs);
 

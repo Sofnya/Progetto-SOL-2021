@@ -26,7 +26,6 @@ int main(int argc, char *argv[])
     int n;
     long delay = 0;
     char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
-    void *flag;
 
     // Ignore SIGPIPE to avoid problems with read/writes on pipes.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);

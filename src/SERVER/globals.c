@@ -205,6 +205,10 @@ void load_config(char *path)
             {
                 POLICY = P_BIGG;
             }
+            else if (!strncmp(value, "LFU", 3))
+            {
+                POLICY = P_LFU;
+            }
             else
             {
                 printf("Invalid policy %s on line %d, ignoring.\n", value, lineN);
@@ -264,6 +268,10 @@ void load_config(char *path)
 
     case (P_BIGG):
         puts("POLICY:BIGG");
+        break;
+
+    case (P_LFU):
+        puts("POLICY:LFU");
         break;
 
     default:
