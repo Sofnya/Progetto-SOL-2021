@@ -67,7 +67,7 @@ void connStateDestroy(ConnState *state)
  * @param state the ConnState in which to open the File.
  * @return int 0 on success, -1 and sets errno to EOVERFLOW on a capacity miss, -1 and sets errno on error.
  */
-int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, ConnState *state)
 {
     FileDescriptor *fd, *tmp;
     int capMiss = 0;
@@ -75,22 +75,22 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
     // If we are locking a File, we have to unlock our previous lockedFile, if present, according to the one-file policy.
     if (flags & O_LOCK)
     {
-        if (state.lockedFile != NULL)
+        if (state->lockedFile != NULL)
         {
-            unlockFile(state.lockedFile, state.fs);
-            state.lockedFile = NULL;
+            unlockFile(state->lockedFile, state->fs);
+            state->lockedFile = NULL;
         }
     }
 
     // Check if we already opened this file.
-    if (hashTableGet(path, (void **)&tmp, *state.fds) != -1)
+    if (hashTableGet(path, (void **)&tmp, *state->fds) != -1)
     {
         errno = EINVAL;
         return -1;
     }
 
     // We have to try to open the file in a while since a freeSpace doesn't always free enough space in a single call.
-    while (openFile(path, flags, &fd, state.fs) == -1)
+    while (openFile(path, flags, &fd, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -98,7 +98,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         }
 
         capMiss = 1;
-        *fcsSize = freeSpace(0, fcs, state.fs);
+        *fcsSize = freeSpace(0, fcs, state->fs);
         if (*fcsSize == -1)
         {
             perror("Error on freeSpace");
@@ -109,18 +109,18 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
     // Update our lockedFile
     if (flags & O_LOCK)
     {
-        state.lockedFile = fd;
+        state->lockedFile = fd;
     }
 
     // On a capacity miss, we have to return -1 and set errno to EOVERFLOW
     if (capMiss)
     {
-        hashTablePut((char *)fd->name, fd, *state.fds);
+        hashTablePut((char *)fd->name, fd, *state->fds);
 
         errno = EOVERFLOW;
         return -1;
     }
-    return hashTablePut((char *)fd->name, fd, *state.fds);
+    return hashTablePut((char *)fd->name, fd, *state->fds);
 }
 
 /**
@@ -130,27 +130,27 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
  * @param state inside which ConnState to close the file.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int conn_closeFile(const char *path, ConnState state)
+int conn_closeFile(const char *path, ConnState *state)
 {
     FileDescriptor *fd;
 
     // If we are closing our currently locked File, the FileSystem will unlock it for us.
-    if (state.lockedFile != NULL)
+    if (state->lockedFile != NULL)
     {
-        if (!strcmp(path, state.lockedFile->name))
+        if (!strcmp(path, state->lockedFile->name))
         {
-            state.lockedFile = NULL;
+            state->lockedFile = NULL;
         }
     }
 
     // Check if the File is open.
-    if (hashTableRemove(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableRemove(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
-    return closeFile(fd, state.fs);
+    return closeFile(fd, state->fs);
 }
 
 /**
@@ -162,17 +162,17 @@ int conn_closeFile(const char *path, ConnState state)
  * @param state the ConnState inside of which we wish to read the File.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int conn_readFile(const char *path, void **buf, size_t size, ConnState state)
+int conn_readFile(const char *path, void **buf, size_t size, ConnState *state)
 {
     FileDescriptor *fd;
 
-    if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
-    return readFile(fd, buf, size, state.fs);
+    return readFile(fd, buf, size, state->fs);
 }
 
 /**
@@ -186,26 +186,26 @@ int conn_readFile(const char *path, void **buf, size_t size, ConnState state)
  * @param state the ConnState inside of which we wish to write the File.
  * @return int 0 on success, -1 and sets errno=EOVERFLOW on a capacity miss, -1 and sets errno on failure.
  */
-int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState *state)
 {
     FileDescriptor *fd;
     int capMiss = 0;
 
-    if (size > state.fs->maxSize)
+    if (size > state->fs->maxSize)
     {
         errno = EINVAL;
         return -1;
     }
 
     // First get the FileDescriptor from the ConnState.
-    if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
     // Have to write in a while since we need to try again on a capacity miss.
-    while (writeFile(fd, buf, size, state.fs) == -1)
+    while (writeFile(fd, buf, size, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -214,7 +214,7 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
 
         capMiss = 1;
 
-        *fcsSize = freeSpace(size, fcs, state.fs);
+        *fcsSize = freeSpace(size, fcs, state->fs);
         if (*fcsSize == -1)
         {
             perror("Couldn't free space for capacity miss...");
@@ -241,24 +241,24 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
  * @param state the ConnState inside of which we wish to append to the File.
  * @return int 0 on success, -1 and sets errno=EOVERFLOW on a capacity miss, -1 and sets errno on failure.
  */
-int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState state)
+int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fcs, int *fcsSize, ConnState *state)
 {
     FileDescriptor *fd;
     int capMiss = 0;
 
-    if (size + getSize(path, state.fs) > state.fs->maxSize)
+    if (size + getSize(path, state->fs) > state->fs->maxSize)
     {
         errno = EINVAL;
         return -1;
     }
 
-    if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
-    while (appendToFile(fd, buf, size, state.fs) == -1)
+    while (appendToFile(fd, buf, size, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -266,7 +266,7 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
         }
         capMiss = 1;
 
-        *fcsSize = freeSpace(size, fcs, state.fs);
+        *fcsSize = freeSpace(size, fcs, state->fs);
         if (*fcsSize == -1)
         {
             perror("Couldn't free space for capacity miss...");
@@ -291,9 +291,9 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
  * @param state the ConnState in which we wish to readN Files.
  * @return int on success the actual number of Files read, equals to the size of fcs in number of FileContainers. -1 and sets errno on failure
  */
-int conn_readNFiles(int N, FileContainer **fcs, ConnState state)
+int conn_readNFiles(int N, FileContainer **fcs, ConnState *state)
 {
-    return readNFiles(N, fcs, state.fs);
+    return readNFiles(N, fcs, state->fs);
 }
 
 /**
@@ -303,26 +303,26 @@ int conn_readNFiles(int N, FileContainer **fcs, ConnState state)
  * @param state the ConnState in which we wish to remove the File.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int conn_removeFile(const char *path, ConnState state)
+int conn_removeFile(const char *path, ConnState *state)
 {
     FileDescriptor *fd;
 
-    if (hashTableRemove(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableRemove(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
     // If we are removing our lockedFile we need to update it accordingly.
-    if (state.lockedFile != NULL)
+    if (state->lockedFile != NULL)
     {
-        if (!strcmp(path, state.lockedFile->name))
+        if (!strcmp(path, state->lockedFile->name))
         {
-            state.lockedFile = NULL;
+            state->lockedFile = NULL;
         }
     }
 
-    if (removeFile(fd, state.fs) != 0)
+    if (removeFile(fd, state->fs) != 0)
     {
         return -1;
     }
@@ -340,31 +340,31 @@ int conn_removeFile(const char *path, ConnState state)
  * @param state the ConnState in which we wish to lock the File.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int conn_lockFile(const char *path, ConnState state)
+int conn_lockFile(const char *path, ConnState *state)
 {
     FileDescriptor *fd;
 
     // If we are locking a new File, automatically unlock the previously locked File according to the one-file policy.
-    if (state.lockedFile != NULL)
+    if (state->lockedFile != NULL)
     {
-        if (unlockFile(state.lockedFile, state.fs) != 0)
+        if (unlockFile(state->lockedFile, state->fs) != 0)
         {
             errno = EINVAL;
             return -1;
         }
-        state.lockedFile = NULL;
+        state->lockedFile = NULL;
     }
 
-    if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
     // And update our lockedFile to the newly locked File.
-    state.lockedFile = fd;
+    state->lockedFile = fd;
 
-    return lockFile(fd, state.fs);
+    return lockFile(fd, state->fs);
 }
 
 /**
@@ -374,21 +374,21 @@ int conn_lockFile(const char *path, ConnState state)
  * @param state the ConnState in which we wish to unlock the File.
  * @return int 0 on success, -1 and sets errno on failure.
  */
-int conn_unlockFile(const char *path, ConnState state)
+int conn_unlockFile(const char *path, ConnState *state)
 {
     FileDescriptor *fd;
     int tmp;
 
-    if (hashTableGet(path, (void **)&fd, *state.fds) == -1)
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
         errno = EINVAL;
         return -1;
     }
 
-    if ((tmp = unlockFile(fd, state.fs)) == 0)
+    if ((tmp = unlockFile(fd, state->fs)) == 0)
     {
         // Remember to update our lockedFile.
-        state.lockedFile = NULL;
+        state->lockedFile = NULL;
     }
     return tmp;
 }

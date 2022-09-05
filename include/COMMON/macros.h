@@ -9,7 +9,7 @@
     {                                                                \
         printf("Error on line:%d of file:%s\n", __LINE__, __FILE__); \
         perror("Error");                                             \
-        exit(EXIT_FAILURE);                                          \
+        return -1;                                                   \
     }
 #define SAFE_ERROR_CHECK(arg)                                        \
     if ((arg) == -1)                                                 \
@@ -37,7 +37,21 @@
     {                                                                \
         printf("Error on line:%d of file:%s\n", __LINE__, __FILE__); \
         perror("Error on a pthread call");                           \
-        exit(EXIT_FAILURE);                                          \
+        return -1;                                                   \
+    }
+#define VOID_PTHREAD_CHECK(arg)                                      \
+    if ((errno = (arg)) != 0)                                        \
+    {                                                                \
+        printf("Error on line:%d of file:%s\n", __LINE__, __FILE__); \
+        perror("Error on a pthread call");                           \
+        return;                                                      \
+    }
+#define NULL_PTHREAD_CHECK(arg)                                      \
+    if ((errno = (arg)) != 0)                                        \
+    {                                                                \
+        printf("Error on line:%d of file:%s\n", __LINE__, __FILE__); \
+        perror("Error on a pthread call");                           \
+        return NULL;                                                 \
     }
 #define READ_CHECK(arg, expected)                                                \
     {                                                                            \

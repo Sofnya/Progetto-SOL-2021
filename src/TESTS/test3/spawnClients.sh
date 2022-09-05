@@ -3,10 +3,10 @@
 while true
     do
     num_children=$(pgrep -c -P$$)
-    if [ $num_children -lt 10 ];
-    then
+    for ((j = $num_children; j < 20; j++))
+    do
         i=$((1 + $RANDOM % 4))
         ./client$i.sh &
-    fi
+    done
     done
 wait

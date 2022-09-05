@@ -14,25 +14,37 @@ int main(int argc, char const *argv[])
         exit(EXIT_SUCCESS);
     }
 
+    // We build a Stats object in parse.
     stats = parse(argv[1]);
 
+    // Then print it.
     printStats(stats);
     return 0;
 }
 
+/**
+ * @brief Parses the log file at path, returning the appropriate Stats.
+ *
+ * @param path the path to the log file.
+ * @return Stats the appropriate Stats.
+ */
 Stats parse(const char *path)
 {
     Stats stats;
     FILE *logFile;
+
     char *line = NULL, *preamble = NULL, *value = NULL, *saveptr = NULL, *type = NULL, *tid = NULL;
     char *innersaveptr = NULL, *value1 = NULL, *value2 = NULL;
+
     size_t len = 0;
     int lineN = 0;
     long long tmp1, tmp2;
     long long curOpen = 0;
 
+    // First open the logFile.
     UNSAFE_NULL_CHECK(logFile = fopen(path, "r"));
 
+    // Initialize our Stats.
     stats.closeN = 0;
     stats.readN = 0;
     stats.writeN = 0;
@@ -64,6 +76,7 @@ Stats parse(const char *path)
     stats.threadsSpawned = 0;
     stats.threadsKilled = 0;
 
+    // Now go through the log line by line.
     while (getline(&line, &len, logFile) != -1)
     {
         lineN++;
@@ -76,14 +89,18 @@ Stats parse(const char *path)
                 line[len - 1] = '\00';
         }
 
+        // The preamble contains the date/hour.
         preamble = strtok_r(line, "\t", &saveptr);
+        // Unused for now, could be used to keep track of every singular thread's actions.
         tid = strtok_r(NULL, "\t", &saveptr);
+        // The actual entry in the log.
         value = strtok_r(NULL, "\t", &saveptr);
 
         if ((preamble == NULL) || (value == NULL))
         {
             printf("Malformed log file on line %d, continuing anyway.\n", lineN);
         }
+        // We start comparing the first part of the value with known log types.
         else if (!strncmp(value, "[STATUS", 7))
         {
             // Ignored
@@ -103,8 +120,13 @@ Stats parse(const char *path)
         }
         else if (!strncmp(value, "[REQUEST", 8))
         {
+            // Slightly more complicated parsing, a REQUEST log contains >Request type >Uuid, >... >other info depending on the Request type.
+            // Value1 gets the part before the Request type.
             value1 = strtok_r(value, ">", &innersaveptr);
+            // Here we put the Request type.
             type = strtok_r(NULL, ">", &innersaveptr);
+
+            // We ignore the UUID and get the first >Entry after that.
             value1 = strtok_r(NULL, ">", &innersaveptr);
             value1 = strtok_r(NULL, ">", &innersaveptr);
 
@@ -113,7 +135,8 @@ Stats parse(const char *path)
                 stats.readN++;
             }
             else if (!strncmp(type, "WRITE", 5))
-            { // Get size, if present
+            {
+                // Get size, if present
                 value1 = strtok_r(value1, ":", &innersaveptr);
                 value1 = strtok_r(NULL, ":", &innersaveptr);
 
@@ -147,6 +170,7 @@ Stats parse(const char *path)
         }
         else if (!strncmp(value, "[RESPONSE", 9))
         {
+            // In a RESPONSE we always have a >Type >Size:size >UUID.
             value1 = strtok_r(value, ">", &innersaveptr);
             type = strtok_r(NULL, ">", &innersaveptr);
             value1 = strtok_r(NULL, ">", &innersaveptr);
@@ -169,6 +193,8 @@ Stats parse(const char *path)
         }
         else if (!strncmp(value, "[SIZE", 5))
         {
+            // SIZE contains the fields >CurN:curN >CurSize:curSize.
+
             value1 = strtok_r(value, ">", &innersaveptr);
             value1 = strtok_r(NULL, ">", &innersaveptr);
             value2 = strtok_r(NULL, ">", &innersaveptr);
@@ -195,6 +221,7 @@ Stats parse(const char *path)
         }
         else if (!strncmp(value, "[COMPRESSED", 11))
         {
+            // COMPRESSED contains the fields >From:from >To:to.
             value1 = strtok_r(value, ">", &innersaveptr);
             value1 = strtok_r(NULL, ">", &innersaveptr);
             value2 = strtok_r(NULL, ">", &innersaveptr);
@@ -276,6 +303,11 @@ Stats parse(const char *path)
     return stats;
 }
 
+/**
+ * @brief Prints a Stats object in human readable form.
+ *
+ * @param stats the Stats to print.
+ */
 void printStats(Stats stats)
 {
     printf("Number of:\n");

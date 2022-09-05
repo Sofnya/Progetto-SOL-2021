@@ -13,11 +13,11 @@
 #define SEED 1337
 
 /**
- * @brief Searches for the element of key key in the given _row, and returns it in el if found.
+ * @brief Searches for the element of given key in the given _row, and returns it in el if found.
  *
- * @param key the key of the element to be found.
+ * @param key the key of the element to get.
  * @param el if not NULL, where the entry will be stored, if found.
- * @param row the row on which to search.
+ * @param row the row in which to search.
  * @return int 0 on success, -1 if not found.
  */
 int _rowGet(const char *key, struct _entry *el, struct _row row)
@@ -34,6 +34,7 @@ int _rowGet(const char *key, struct _entry *el, struct _row row)
         return -1;
     }
 
+    // We just scan the list and strcmp every element's key with our given key.
     while (listScan(&curel, &saveptr, list) != -1)
     {
         cur = curel;
@@ -45,6 +46,7 @@ int _rowGet(const char *key, struct _entry *el, struct _row row)
             return 0;
         }
     }
+    // Since listScan always misses the last element we have to treat it separately.
     if (errno == EOF)
     {
         cur = curel;
@@ -57,12 +59,13 @@ int _rowGet(const char *key, struct _entry *el, struct _row row)
         }
     }
 
+    // If we got here we found nothing.
     PTHREAD_CHECK(pthread_mutex_unlock(row.mtx));
     return -1;
 }
 
 /**
- * @brief Inserts the given entry in the given row, substituting previously existing entry of same key.
+ * @brief Inserts given entry in the given row, substituting previously existing entry of same key.
  *
  * @param el the entry to be inserted.
  * @param row the _row to modify
@@ -74,11 +77,15 @@ int _rowPut(struct _entry el, struct _row row)
     struct _entry *new;
 
     PTHREAD_CHECK(pthread_mutex_lock(row.mtx));
+
+    // First we check if an entry with the same key is already present, if so we remove it.
+    // We can do this without deadlocking since we initialized the lock as reentrant.
     if (_rowGet(el.key, NULL, row) == 0)
     {
         _rowRemove(el.key, NULL, row);
     }
 
+    // Then just initialize our entry and push it on the row list.
     SAFE_NULL_CHECK(new = malloc(sizeof(struct _entry)));
     new->value = el.value;
     new->key = el.key;
@@ -91,9 +98,9 @@ int _rowPut(struct _entry el, struct _row row)
 }
 
 /**
- * @brief Removes an entry of given key from row. If el not NULL returns the removed element inside of it.
+ * @brief Removes an entry of given key from row. If el is not NULL returns the removed element inside of it.
  *
- * @param key the key of the entry to be removed.
+ * @param key the key of the entry to remove.
  * @param el if not NULL, where the entry will be stored.
  * @param row the _row to modify
  * @return int 0 on success, -1 if not found
@@ -115,6 +122,7 @@ int _rowRemove(const char *key, struct _entry *el, struct _row row)
         return -1;
     }
 
+    // We scan the list until we find the element's position.
     while (listScan(&curel, &saveptr, list) != -1)
     {
         cur = curel;
@@ -134,6 +142,7 @@ int _rowRemove(const char *key, struct _entry *el, struct _row row)
         }
     }
 
+    // If we found it we can just call listRemove on the found position to remove it.
     if (found)
     {
         ERROR_CHECK(listRemove(pos, &curel, list));
@@ -150,7 +159,7 @@ int _rowRemove(const char *key, struct _entry *el, struct _row row)
 }
 
 /**
- * @brief Initializes the given _row.
+ * @brief Initializes given _row.
  *
  * @param row the row to initialize.
  * @return int 0 on success, -1 and sets errno on error.
@@ -159,6 +168,8 @@ int _rowInit(struct _row *row)
 {
     pthread_mutexattr_t mtxattr;
     pthread_mutexattr_init(&mtxattr);
+
+    // We use a reentrant mutex so that we can call our own functions while still holding the lock.
     ERROR_CHECK(pthread_mutexattr_settype(&mtxattr, PTHREAD_MUTEX_RECURSIVE));
 
     SAFE_NULL_CHECK(row->row = malloc(sizeof(List)));
@@ -173,7 +184,7 @@ int _rowInit(struct _row *row)
 }
 
 /**
- * @brief Destroys the given row, freeing all memory.
+ * @brief Destroys given row, freeing it's resources.
  *
  * @param row the row to destroy.
  */
@@ -185,6 +196,7 @@ void _rowDestroy(struct _row row)
     if (row.row->size != 0)
     {
         errno = 0;
+        // We free all entry's in the row list before destroying it.
         while (listScan(&cur, &saveptr, row.row) != -1)
         {
             curEntry = cur;
@@ -230,10 +242,10 @@ int _rowPop(struct _entry *el, struct _row row)
 }
 
 /**
- * @brief Initializes the given HashTable, with given size.
+ * @brief Initializes given HashTable, with given size.
  *
- * @param size the size of the table. Should be about 2 times the predicted number of elements for best performance.
- * @param table the table to be initialized.
+ * @param size the size of the HashTable. Should be about 2 times the predicted number of elements for best performance.
+ * @param table the HashTable to be initialized.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int hashTableInit(size_t size, HashTable *table)
@@ -256,9 +268,9 @@ int hashTableInit(size_t size, HashTable *table)
 }
 
 /**
- * @brief Destroys the given HashTable, freeing all memory.
+ * @brief Destroys given HashTable, freeing it's resources.
  *
- * @param table the table to be destroyed.
+ * @param table the HashTable to be destroyed.
  */
 void hashTableDestroy(HashTable *table)
 {
@@ -273,11 +285,11 @@ void hashTableDestroy(HashTable *table)
 }
 
 /**
- * @brief Gets the value corresponding to given key from the HashTable.
+ * @brief Gets the value corresponding to given key from given HashTable.
  *
  * @param key the key.
  * @param value where the found value will be stored.
- * @param table the table in which to search.
+ * @param table the HashTable in which to search.
  * @return int 0 on a success, -1 if not found.
  */
 int hashTableGet(const char *key, void **value, HashTable table)
@@ -285,6 +297,7 @@ int hashTableGet(const char *key, void **value, HashTable table)
     size_t loc;
     struct _entry entry;
 
+    // We just check in which row we stored the entry, then call _rowGet on that row.
     loc = _getLoc(key, table.size);
 
     if (_rowGet(key, &entry, table._table[loc]) == -1)
@@ -300,11 +313,11 @@ int hashTableGet(const char *key, void **value, HashTable table)
 }
 
 /**
- * @brief Removes the value corresponding to the given key form the table. Returns it in value if value is not NULL.
+ * @brief Removes the value corresponding to given key from given HashTable. Returns it in value if value is not NULL.
  *
  * @param key the key.
  * @param value if not NULL, where the value will be stored.
- * @param table the table to modify.
+ * @param table the HashTable to modify.
  * @return int 0 on a success, -1 if not found.
  */
 int hashTableRemove(const char *key, void **value, HashTable table)
@@ -313,6 +326,7 @@ int hashTableRemove(const char *key, void **value, HashTable table)
     size_t loc;
     struct _entry entry;
 
+    // As in get, we just find the right row before calling _rowRemove on it.
     loc = _getLoc(key, table.size);
 
     if (_rowRemove(key, &entry, table._table[loc]) == -1)
@@ -331,11 +345,11 @@ int hashTableRemove(const char *key, void **value, HashTable table)
 }
 
 /**
- * @brief Inserts the given key:value pair inside of the table. If selected key already exists, substitutes it's value.
+ * @brief Inserts given key:value pair inside of given HashTable. If selected key already exists, substitutes it's value.
  *
  * @param key the key.
  * @param value the value.
- * @param table the table to be modified.
+ * @param table the HashTable to modify.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
 int hashTablePut(char *key, void *value, HashTable table)
@@ -353,11 +367,11 @@ int hashTablePut(char *key, void *value, HashTable table)
 }
 
 /**
- * @brief Pops an element from the table. A copy of it's key will be stored in key and it's value will be stored in value.
+ * @brief Pops an element from given HashTable. A copy of it's key will be stored in key and it's value will be stored in value.
  *
  * @param key where the element's key will be stored.
  * @param value where the element's value will be stored.
- * @param table the table to modify.
+ * @param table the HashTable to modify.
  * @return int 0 on success, -1 and sets errno otherwise (if table is empty).
  */
 int hashTablePop(char **key, void **value, HashTable table)
@@ -385,7 +399,7 @@ int hashTablePop(char **key, void **value, HashTable table)
 
 /**
  *
- * @brief Gets the number of elements currently stored in table, roughly.
+ * @brief Gets the number of elements currently stored in HashTable, roughly.
  *
  * @param table the HashTable to query.
  * @return size_t the number of elements currently stored in table.
@@ -394,6 +408,8 @@ long long hashTableSize(HashTable table)
 {
     int i;
     long long count;
+
+    // This isn't guarateed to be accurate as it's not thread-safe, but in a non thread-safe situation this will still get a roughly accurate result.
     for (i = 0; i < table.size; i++)
     {
         count += listSize(*table._table[i].row);
@@ -418,9 +434,9 @@ size_t _getLoc(const char *key, size_t size)
 }
 
 /**
- * @brief For debugging, prints the rows contents.
+ * @brief For debugging, prints given row's contents.
  *
- * @param row the row to be printed.
+ * @param row the row to print.
  */
 void _printRow(struct _row row)
 {
@@ -439,9 +455,9 @@ void _printRow(struct _row row)
 }
 
 /**
- * @brief For debugging, prints the hashtable's contents.
+ * @brief For debugging, prints given HashTable's contents.
  *
- * @param table the table to be printed.
+ * @param table the HashTable to print.
  */
 void printHashTable(HashTable table)
 {

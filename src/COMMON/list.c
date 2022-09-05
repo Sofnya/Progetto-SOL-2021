@@ -5,9 +5,9 @@
 #include "COMMON/macros.h"
 
 /**
- * @brief Initializes the list. Should always be called before using it.
+ * @brief Initializes given List.
  *
- * @param list the list to be initialized.
+ * @param list the List to initialize.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
 int listInit(List *list)
@@ -20,9 +20,9 @@ int listInit(List *list)
 }
 
 /**
- * @brief Frees the list, it should not be used afterwards. Take care to free all data contained within it yourself.
+ * @brief Frees given List, freeing it's resources.
  *
- * @param list the list to be destroyed.
+ * @param list the List to destroy.
  * @return int 0 on success, -1 and sets errno otherwise.
  */
 int listDestroy(List *list)
@@ -43,16 +43,17 @@ int listDestroy(List *list)
 }
 
 /**
- * @brief Inserts an element in position 0.
+ * @brief Inserts given element in position 0 of given List.
  *
- * @param el the element to be inserted.
- * @param list the list to be updated.
+ * @param el the element to insert.
+ * @param list the List to update.
  * @return int 0 if successfull, -1 and sets errno on an error.
  */
 int listPush(void *el, List *list)
 {
     struct _listEl *new;
 
+    // If List is empty we handle it separately.
     if (list->_head == NULL)
     {
         SAFE_NULL_CHECK(list->_head = malloc(sizeof(struct _listEl)));
@@ -61,6 +62,7 @@ int listPush(void *el, List *list)
         list->_head->prev = NULL;
         list->_head->data = el;
     }
+    // Otherwise we just create a new head.
     else
     {
         SAFE_NULL_CHECK(new = malloc(sizeof(struct _listEl)));
@@ -77,10 +79,10 @@ int listPush(void *el, List *list)
 }
 
 /**
- * @brief Gets and removes the element at position 0.
+ * @brief Gets and removes the element at position 0 of given List.
  *
  * @param el if not NULL, where the removed element will be saved.
- * @param list the target list.
+ * @param list the target List.
  * @return int 0 if successfull, -1 and sets errno on an error.
  */
 int listPop(void **el, List *list)
@@ -102,10 +104,12 @@ int listPop(void **el, List *list)
     free(tmp);
     list->size--;
 
+    // Need to handle the case in which the List was only one element long, and update it's tail.
     if (list->_head == NULL)
     {
         list->_tail = NULL;
     }
+    // And update the prev to completely remove el from the List.
     else
     {
         list->_head->prev = NULL;
@@ -115,10 +119,10 @@ int listPop(void **el, List *list)
 }
 
 /**
- * @brief Puts the element el at the end of the list (position size).
+ * @brief Puts given element el at the end of given List.
  *
- * @param el the element to be appended.
- * @param list the list to be updated.
+ * @param el the element to append.
+ * @param list the List to update.
  * @return int 0 if successfull, -1 and sets errno on error.
  */
 int listAppend(void *el, List *list)
@@ -145,11 +149,11 @@ int listAppend(void *el, List *list)
 }
 
 /**
- * @brief Puts the element el in position pos in the list.
- * @param pos the position the element should take in the updated list.
- * @param el the element to be added.
- * @param list the list to be updated.
- * @return int 0 if successfull, -1 and sets errno on an error (if pos is an invalid position).
+ * @brief Puts given element el in position pos in given List.
+ * @param pos the position the element should take in the updated List.
+ * @param el the element to add.
+ * @param list the List to update.
+ * @return int 0 if successfull, -1 and sets errno on an error.
  */
 int listPut(long long pos, void *el, List *list)
 {
@@ -198,7 +202,8 @@ int listPut(long long pos, void *el, List *list)
             curPos++;
         }
     }
-    // And add a new element right after..
+
+    // And add a new element right after the found element.
     SAFE_NULL_CHECK(new = malloc(sizeof(struct _listEl)));
     new->data = el;
     new->prev = cur;
@@ -221,7 +226,7 @@ int listPut(long long pos, void *el, List *list)
  *
  * @param pos the position from which to get the element.
  * @param el a pointer in which the element will be stored.
- * @param list the list from which to get the element.
+ * @param list the List from which to get the element.
  * @return int 0 if successfull, -1 and sets errno on an error (if pos is an invalid position or el is NULL).
  */
 int listGet(long long pos, void **el, List *list)
@@ -263,11 +268,11 @@ int listGet(long long pos, void **el, List *list)
 }
 
 /**
- * @brief Removes the element in position pos from the list. If el != NULL returns the removed element in there.
+ * @brief Removes the element in position pos from given List. If el != NULL returns the removed element in el.
  *
  * @param pos the position from which to remove the element.
  * @param el if not NULL, will be set to the removed element.
- * @param list the list to be updated.
+ * @param list the List to update.
  * @return int 0 if successfull, -1 and sets errno on an error (if pos is an invalid position).
  */
 int listRemove(long long pos, void **el, List *list)
@@ -342,10 +347,10 @@ int listRemove(long long pos, void **el, List *list)
 }
 
 /**
- * @brief Returns the size of list. Element positions go from 0 to size - 1.
+ * @brief Returns the size of given List. Element positions go from 0 to size - 1.
  *
- * @param list the list of which one needs the size.
- * @return int the size of list.
+ * @param list the List to query.
+ * @return int the size of given List.
  */
 int listSize(List list)
 {
@@ -353,12 +358,12 @@ int listSize(List list)
 }
 
 /**
- * @brief Scans the list sequentially, giving a new element at every call. Should be first called with a NULL saveptr, and successively with the same unmodified saveptr.
+ * @brief Scans given List sequentially, giving a new element at every call. Should be first called with a NULL saveptr, and successively with the same unmodified saveptr.
  *
  * @param el where the element will be stored.
  * @param saveptr should point to NULL on the first call, unmodified afterwards.
- * @param list the list to scan.
- * @return int 0 on a successfull read, -1 and sets errno to EOF on list end, -1 and EINVAL on an invalid scan.
+ * @param list the List to scan.
+ * @return int 0 on a successfull read, -1 and sets errno to EOF on List end, -1 and EINVAL on an invalid scan.
  */
 int listScan(void **el, void **saveptr, List *list)
 {
@@ -370,6 +375,7 @@ int listScan(void **el, void **saveptr, List *list)
         return -1;
     }
 
+    // Our saveptr is actually just an internal listElement.
     if (*saveptr == NULL)
     {
         cur = list->_head;
@@ -397,7 +403,7 @@ int listScan(void **el, void **saveptr, List *list)
 /**
  * @brief For debugging, prints a list's contents.
  *
- * @param list the list to be printed.
+ * @param list the List to be print.
  */
 void printList(List *list)
 {
@@ -418,10 +424,10 @@ void printList(List *list)
 }
 
 /**
- * @brief Prints a list's contents, using the custom fnc provided for every element.
+ * @brief Prints a List's contents, using the custom fnc provided for every element.
  *
- * @param list the list to be printed.
- * @param fnc a function that turns every element in the list in a malloced printable string.
+ * @param list the List to be print.
+ * @param fnc a function that turns every element in given List in a malloced printable string.
  */
 void customPrintList(List *list, char *(*fnc)(void *))
 {
@@ -446,6 +452,13 @@ void customPrintList(List *list, char *(*fnc)(void *))
     free(cur);
 }
 
+/**
+ * @brief Sorts given List in ascending order, according to given custom heuristic.
+ *
+ * @param list the List to sort.
+ * @param heuristic a function turning every List element in a long.
+ * @return int 0 on success, -1 on failure.
+ */
 int listSort(List *list, long (*heuristic)(void *))
 {
     size_t sortedPos = 1;
@@ -455,28 +468,36 @@ int listSort(List *list, long (*heuristic)(void *))
     long curVal;
     int i;
 
+    // If List is one or zero elements it's already sorted.
     if (listSize(*list) <= 1)
         return 0;
 
+    // We implement a simple insertion sort.
+    // We keep track of the sorted portion of the list, the elements from position 0 to sortedPos - 1 are already sorted.
     while (sortedPos < listSize(*list))
     {
+        // We work on the first element after the sorted portion.
         SAFE_ERROR_CHECK(listGet(sortedPos - 1, &prevEl, list));
         SAFE_ERROR_CHECK(listGet(sortedPos, &curEl, list));
         curVal = heuristic(curEl);
 
+        // If curVal is bigger than the maximum value of the sorted portion, it should stay where it is.
         if (curVal >= heuristic(prevEl))
         {
-
             sortedPos++;
             continue;
         }
 
+        // Otherwise we gotta find it's right place inside of the sorted portion, by scanning all elements.
         saveptr = NULL;
         i = 0;
         while (listScan(&prevEl, &saveptr, list) == 0)
         {
+            // We are searching for the first element bigger than our element, to put ourselves right before it.
             if (curVal <= heuristic(prevEl))
             {
+                // We are guaranteed to find this element before the end of the sorted portion of the List.
+                // Once found we remove the current element from it's previous position, and put it right before the found element.
                 SAFE_ERROR_CHECK(listRemove(sortedPos, &curEl, list));
                 SAFE_ERROR_CHECK(listPut(i, curEl, list));
                 sortedPos++;

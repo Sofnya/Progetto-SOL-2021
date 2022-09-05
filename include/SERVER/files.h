@@ -33,7 +33,7 @@ typedef struct _file
 } File;
 
 int fileInit(const char *name, int isCompressed, File *file);
-void fileDestroy(File *file);
+int fileDestroy(File *file);
 
 int metadataInit(const char *name, Metadata *metadata);
 void metadataDestroy(Metadata *metadata);

@@ -30,7 +30,7 @@ struct _messageArgs
 };
 
 void handleConnection(void *fdc);
-Message *parseRequest(Message *request, ConnState state);
+Message *parseRequest(Message *request, ConnState *state);
 
 void logConnection(ConnState state);
 void logDisconnect(ConnState state);
@@ -59,6 +59,7 @@ void signalHandler(int signum)
     {
         threadpoolFastExit(&pool);
     }
+
     exit(EXIT_SUCCESS);
 }
 
@@ -76,7 +77,7 @@ void cleanup(void)
     prettyPrintFiles(&fs);
     fsDestroy(&fs);
 
-    logger("Done cleaning up!", "STATUS");
+    logger("Done cleaning up, goodbye!", "STATUS");
 }
 
 int main(int argc, char *argv[])
@@ -198,7 +199,7 @@ void handleConnection(void *fdc)
         logRequest(request, state);
 
         // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
-        response = parseRequest(request, state);
+        response = parseRequest(request, &state);
         logResponse(response, state);
 
         args.m = response;
@@ -241,7 +242,7 @@ int _sendMessageWrapper(void *args)
 }
 
 // Here we parse a request, making all necessary calls to the FileSystem and generating an appropriate response with the results.
-Message *parseRequest(Message *request, ConnState state)
+Message *parseRequest(Message *request, ConnState *state)
 {
     Message *response;
 
@@ -335,7 +336,7 @@ Message *parseRequest(Message *request, ConnState state)
         size_t size;
 
         // We need the File's uncompressed size to allocate an appropriate buffer.
-        size = getSize(request->info, state.fs);
+        size = getSize(request->info, state->fs);
         if (size == 0)
         {
             messageInit(0, NULL, "ERROR|MISSING", MT_INFO, MS_ERR, response);
@@ -500,12 +501,18 @@ Message *parseRequest(Message *request, ConnState state)
         // As for a capacity miss, we use a serialized FileContainer array to send many files back.
         if (amount > 0)
         {
-            SAFE_ERROR_CHECK(serializeContainerArray(fc, amount, &size, &buf));
-            sprintf(info, "READN:%d", amount);
-            SAFE_ERROR_CHECK(messageInit(size, buf, info, MT_INFO, MS_OK, response));
-            for (i = 0; i < amount; i++)
+            if (serializeContainerArray(fc, amount, &size, &buf) == -1)
             {
-                destroyContainer(&fc[i]);
+                messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+            }
+            else
+            {
+                sprintf(info, "READN:%d", amount);
+                messageInit(size, buf, info, MT_INFO, MS_OK, response);
+                for (i = 0; i < amount; i++)
+                {
+                    destroyContainer(&fc[i]);
+                }
             }
             free(fc);
             free(buf);

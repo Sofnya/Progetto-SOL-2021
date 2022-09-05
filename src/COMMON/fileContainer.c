@@ -5,12 +5,12 @@
 #include "COMMON/macros.h"
 
 /**
- * @brief Initializes the given container, with given parameters.
+ * @brief Initializes given FileContainer, with given parameters.
  *
- * @param size the size of the new containers content.
- * @param content the content of the container, size bytes will be copyed from here inside of the containers content.
- * @param name the name of the container.
- * @param fc a pointer to the container to be initialized.
+ * @param size the size of the new FileContainer's content.
+ * @param content the content of the FileContainer, size bytes will be copyed from here inside of the FileContainer's content.
+ * @param name the name of the FileContainer.
+ * @param fc a pointer to the FileContainer to initialize.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int containerInit(size_t size, void *content, const char *name, FileContainer *fc)
@@ -31,9 +31,9 @@ int containerInit(size_t size, void *content, const char *name, FileContainer *f
 }
 
 /**
- * @brief Destroys given container, freeing it's memory.
+ * @brief Destroys given FileContainer, freeing it's memory.
  *
- * @param fc the container to be destroyed.
+ * @param fc the FileContainer to destroy.
  */
 void destroyContainer(FileContainer *fc)
 {
@@ -48,10 +48,10 @@ void destroyContainer(FileContainer *fc)
 }
 
 /**
- * @brief Serializes the given container, mallocing a new buffer and returning it.
+ * @brief Serializes given FileContainer, allocating a new buffer and returning it in buf.
  *
- * @param fc the fileContainer to serialize.
- * @param buf where the serialized container will be stored.
+ * @param fc the FileContainer to serialize.
+ * @param buf where the serialized FileContainer will be stored.
  * @param size where the size of the new buf will be stored.
  * @return int 0 on success, -1 and sets errno on failure
  */
@@ -60,10 +60,12 @@ int serializeContainer(FileContainer fc, void **buf, size_t *size)
     size_t cur = 0;
     size_t nameLen = strlen(fc.name) + 1;
 
+    // First calculate the size and allocate an appropriate buffer.
     *size = calcSize(fc);
-
     SAFE_NULL_CHECK(*buf = malloc(*size));
 
+    // We then serialize the FileContainer inside of the buffer buf in the form:
+    // [sizeof(size_t)]ContentSize [nameLen]Name (it's null terminated so we don't need to know it's length.) [ContentSize]Content.
     memcpy(*buf + cur, (void *)&fc.size, sizeof(size_t));
     cur += sizeof(size_t);
     memcpy(*buf + cur, (void *)fc.name, nameLen);
@@ -76,7 +78,7 @@ int serializeContainer(FileContainer fc, void **buf, size_t *size)
 }
 
 /**
- * @brief Deserializes the given buffer, returning a new initialized FileContainer.
+ * @brief Deserializes given buffer, returning a new initialized FileContainer.
  *
  * @param buf the buffer containing a serialized FileContainer.
  * @param size the size of buf.
@@ -88,16 +90,18 @@ FileContainer deserializeContainer(void *buf, size_t size)
     size_t cur = 0;
     size_t nameLen = -1;
 
+    // First we recover the size from buf.
     fc.size = *(size_t *)(buf + cur);
     cur += sizeof(size_t);
 
+    // Then the length of name, which was a null-terminated string.
     nameLen = strlen((char *)(buf + cur)) + 1;
-
+    // And copy the name to fc.name.
     UNSAFE_NULL_CHECK(fc.name = malloc(nameLen * sizeof(char)));
-
     memcpy(fc.name, buf + cur, nameLen);
     cur += nameLen;
 
+    // Finally, if a content was present, we copy it in fc.content.
     if (fc.size > 0)
     {
         UNSAFE_NULL_CHECK(fc.content = malloc(fc.size));
@@ -112,9 +116,9 @@ FileContainer deserializeContainer(void *buf, size_t size)
 }
 
 /**
- * @brief Serializes an array of n FileContainers, mallocing a new buffer and returning it in buf.
+ * @brief Serializes an array of n FileContainers, allocating a new buffer and returning it in buf.
  *
- * @param fc the array to be serialized.
+ * @param fc the array to serialize.
  * @param n the length of fc.
  * @param size where the size of buf will be stored.
  * @param buf where the serialized array will be stored.
@@ -131,6 +135,8 @@ int serializeContainerArray(FileContainer *fc, size_t n, size_t *size, void **bu
         puts("Called serialize with 0 size array, this shouldn't happen!");
         return -1;
     }
+
+    // First we calculate the size of the final buffer, and allocate it.
     for (i = 0; i < n; i++)
     {
         finalSize += sizeof(size_t) + calcSize(fc[i]);
@@ -139,6 +145,8 @@ int serializeContainerArray(FileContainer *fc, size_t n, size_t *size, void **bu
     *size = finalSize;
     SAFE_NULL_CHECK(*buf = malloc(finalSize));
 
+    // We then serialize the array of containers in the form: [sizeof(size_t)]Serialized size [size bytes]Serialized Container etc.
+    // We just keep track of how large the next serialized FileContainer by putting it's size right before it, so that we can know how many bytes to deserialize afterwards.
     for (i = 0; i < n; i++)
     {
         SAFE_ERROR_CHECK(serializeContainer(fc[i], &curBuf, &curSize))
@@ -155,7 +163,7 @@ int serializeContainerArray(FileContainer *fc, size_t n, size_t *size, void **bu
 /**
  * @brief Deserializes given buffer as an array of FileContainers.
  *
- * @param buf the buffer to be deserialized.
+ * @param buf the buffer to deserialize.
  * @param size the size of the given buffer.
  * @param n where the size of the array will be stored.
  * @return FileContainer* the deserialized array.
@@ -165,6 +173,7 @@ FileContainer *deserializeContainerArray(void *buf, size_t size, size_t *n)
     FileContainer *result;
     size_t curLoc = 0, curSize = 0, count = 0, i;
 
+    // First we count how many FileContainers are present in the array.
     while (curLoc < size)
     {
         curSize = *(size_t *)(buf + curLoc);
@@ -172,8 +181,10 @@ FileContainer *deserializeContainerArray(void *buf, size_t size, size_t *n)
         count++;
     }
 
+    // Once we know we can allocate our result array.
     UNSAFE_NULL_CHECK(result = malloc(sizeof(FileContainer) * count));
 
+    // And then do the actual deserialization.
     curLoc = 0;
     for (i = 0; i < count; i++)
     {

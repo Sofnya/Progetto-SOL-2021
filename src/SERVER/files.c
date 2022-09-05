@@ -50,8 +50,9 @@ int fileInit(const char *name, int isCompressed, File *file)
  * @brief Destroys given File, freeing it's resources.
  *
  * @param file the File to be destroyed
+ * @return int 0 on success, -1 on failure.
  */
-void fileDestroy(File *file)
+int fileDestroy(File *file)
 {
     // We have to do this to avoid destroying the File someone is waiting for a lock on.
 
@@ -84,6 +85,8 @@ void fileDestroy(File *file)
 
     metadataDestroy(file->metadata);
     free(file->metadata);
+
+    return 0;
 }
 
 /**
@@ -118,7 +121,7 @@ int metadataInit(const char *name, Metadata *metadata)
  */
 void metadataDestroy(Metadata *metadata)
 {
-    PTHREAD_CHECK(pthread_mutex_destroy(metadata->metadataLock));
+    VOID_PTHREAD_CHECK(pthread_mutex_destroy(metadata->metadataLock));
     free(metadata->metadataLock);
     free(metadata->name);
 }

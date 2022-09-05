@@ -1,6 +1,9 @@
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <string.h>
 
 #include "SERVER/filesystem.h"
@@ -479,7 +482,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
     while (i < amount)
     {
         // We get the files from the filesList.
-        CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(buf); });
+        CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(*buf); });
 
         curSize = getSize(cur->name, fs);
         CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, { LISTUNLOCK; });
@@ -503,7 +506,7 @@ int readNFiles(int N, FileContainer **buf, FileSystem *fs)
         }
 
         // And put them in a container inside of the output buffer.
-        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[i])), {LISTUNLOCK;  free(buf); });
+        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[i])), {LISTUNLOCK;  free(*buf); });
         free(curBuffer);
         i++;
     }
@@ -883,7 +886,10 @@ char *_metadataPrinter(void *el)
     Metadata *data = (Metadata *)el;
     char *result;
 
-    SAFE_NULL_CHECK(result = malloc(strlen(data->name) + 400));
+    if ((result = malloc(strlen(data->name) + 400)) == NULL)
+    {
+        return "ERROR";
+    }
 
     sprintf(result, "Name: %-30s\tSize:%-10ld\tCreation Time:%-10ld\tLast Access Time:%-10ld\tAccess Count:%-10ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
 

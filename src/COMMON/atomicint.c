@@ -2,26 +2,21 @@
 #include "COMMON/macros.h"
 
 /**
- * @brief Initializes the given AtomicInt.
+ * @brief Initializes given AtomicInt.
  *
- * @param el
+ * @param el the AtomicInt to initialize.
  */
 void atomicInit(AtomicInt *el)
 {
-    /**pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    */
-
     UNSAFE_NULL_CHECK(el->_mtx = malloc(sizeof(pthread_mutex_t)));
     pthread_mutex_init(el->_mtx, NULL);
     el->_value = 0;
 }
 
 /**
- * @brief Destroys the given AtomicInt.
+ * @brief Destroys given AtomicInt, freeing it's resources.
  *
- * @param el
+ * @param el the AtomicInt to destroy.
  */
 void atomicDestroy(AtomicInt *el)
 {
@@ -30,7 +25,7 @@ void atomicDestroy(AtomicInt *el)
 }
 
 /**
- * @brief Returns the value of the given AtomicInt.
+ * @brief Returns the value of given AtomicInt.
  *
  * @param el the AtomicInt to query.
  * @return size_t the value of el.
@@ -46,7 +41,7 @@ size_t atomicGet(AtomicInt *el)
 }
 
 /**
- * @brief Assigns a new value atomically to the given AtomicInt, and returns it's old value.
+ * @brief Atomically assigns a new value to the AtomicInt, and returns it's old value.
  *
  * @param value the value to be set.
  * @param el the AtomicInt to update.
@@ -64,7 +59,7 @@ size_t atomicPut(size_t value, AtomicInt *el)
 }
 
 /**
- * @brief Increments the given AtomicInt atomically by given value, returning it's new value.
+ * @brief Atomically increments given AtomicInt by given value, returning it's new value.
  *
  * @param value by how much to increment.
  * @param el the AtomicInt to increment.
@@ -82,7 +77,7 @@ size_t atomicInc(size_t value, AtomicInt *el)
 }
 
 /**
- * @brief Decrements the given AtomicInt atomically by given value, returning it's new value.
+ * @brief Atomically decrements given AtomicInt by given value, returning it's new value.
  *
  * @param value by how much to decrement it.
  * @param el the AtomicInt to decrement

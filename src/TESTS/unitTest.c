@@ -31,7 +31,7 @@ void test(void *par)
 
 long testHeuristic(void *arg)
 {
-    return (int)arg;
+    return (long)arg;
 }
 
 int threadpoolTest()
@@ -235,7 +235,7 @@ int listTest()
     listInit(&list);
     for (i = 0; i < size; i++)
     {
-        listPush((void *)(rand() % 100), &list);
+        listPush((void *)(long)(rand() % 100), &list);
     }
     printList(&list);
     puts("\nNow sorting it!\n");

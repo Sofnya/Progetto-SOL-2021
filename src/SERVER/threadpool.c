@@ -32,7 +32,7 @@ void threadpoolInit(size_t coreSize, size_t maxSize, ThreadPool *pool)
     listInit(pool->_pids);
 
     UNSAFE_NULL_CHECK(pool->_pidsmtx = malloc(sizeof(pthread_mutex_t)));
-    PTHREAD_CHECK(pthread_mutex_init(pool->_pidsmtx, NULL));
+    VOID_PTHREAD_CHECK(pthread_mutex_init(pool->_pidsmtx, NULL));
 
     pool->_closed = false;
     pool->_terminate = false;
@@ -52,6 +52,7 @@ void threadpoolDestroy(ThreadPool *pool)
     void *el;
 
     logger("Destroying threadpool!", "STATUS");
+
     while (syncqueueLen(*pool->_queue) > 0)
     {
         cur = syncqueuePop(pool->_queue);
@@ -67,7 +68,7 @@ void threadpoolDestroy(ThreadPool *pool)
     }
     listDestroy(pool->_pids);
 
-    PTHREAD_CHECK(pthread_mutex_destroy(pool->_pidsmtx));
+    VOID_PTHREAD_CHECK(pthread_mutex_destroy(pool->_pidsmtx));
 
     free(pool->_queue);
     free(pool->alive);
@@ -102,8 +103,6 @@ void threadpoolTerminate(ThreadPool *pool)
  */
 void threadpoolCleanExit(ThreadPool *pool)
 {
-    struct timespec abstime;
-
     // First close the pool to further submissions.
     threadpoolClose(pool);
 
@@ -114,13 +113,9 @@ void threadpoolCleanExit(ThreadPool *pool)
 
     // Once we are done we terminate it.
     threadpoolTerminate(pool);
-    // We use syncqueueClose to wake all threads waiting for further jobs.
-    syncqueueClose(pool->_queue);
 
-    timespec_get(&abstime, TIME_UTC);
-    abstime.tv_sec += 10;
     logger("Joining manager...", "STATUS");
-    PTHREAD_CHECK(pthread_timedjoin_np(pool->_manager, NULL, &abstime));
+    VOID_PTHREAD_CHECK(pthread_join(pool->_manager, NULL));
     logger("Manager joined!", "STATUS");
 }
 
@@ -138,8 +133,6 @@ void threadpoolFastExit(ThreadPool *pool)
     threadpoolClose(pool);
     // We then tell all threads to terminate as soon as possible, without consuming the pool.
     threadpoolTerminate(pool);
-    // Lastly we wake up all threads waiting for further jobs.
-    syncqueueClose(pool->_queue);
 
     // Waits for up to 5 seconds for all threads to terminate.
     for (i = 0; i < 500; i++)
@@ -155,6 +148,10 @@ void threadpoolFastExit(ThreadPool *pool)
     // Otherwise cancel them.
     threadpoolCancel(pool);
 
+    logger("Joining manager...", "STATUS");
+    VOID_PTHREAD_CHECK(pthread_join(pool->_manager, NULL));
+    logger("Manager joined!", "STATUS");
+
     logger("FastExit done", "STATUS");
 }
 
@@ -169,19 +166,26 @@ void threadpoolCancel(ThreadPool *pool)
     pthread_t *pid;
     char log[500];
 
-    PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
+    logger("Cancelling ThreadPool", "STATUS");
+
+    VOID_PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));
+
+    sprintf(log, ">Alive:%ld >ListSize:%d", atomicGet(pool->alive), listSize(*pool->_pids));
+    logger(log, "THREADPOOL");
     while (listSize(*pool->_pids) > 0)
     {
         listPop(&el, pool->_pids);
         pid = (pthread_t *)el;
-        sprintf(log, ">Canceling:%ld", *pid);
+        sprintf(log, ">Cancelling:%ld", *pid);
         logger(log, "THREADPOOL");
         // All pids in pool->_pids are guaranteed alive, as threads automatically remove themselves from the list on death.
         // As such we can safely cancel them.
-        pthread_cancel(*pid);
+        VOID_PTHREAD_CHECK(pthread_cancel(*pid));
+        sprintf(log, ">Cancelled:%ld", *pid);
+        logger(log, "THREADPOOL");
         free(el);
     }
-    PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
+    VOID_PTHREAD_CHECK(pthread_mutex_unlock(pool->_pidsmtx));
 }
 
 /**
@@ -261,7 +265,7 @@ void *_execLoop(void *args)
     SyncQueue *queue = ((struct _execLoopArgs *)args)->queue;
     AtomicInt *alive = ((struct _execLoopArgs *)args)->alive;
     struct _cleanup *cln;
-    SAFE_NULL_CHECK(cln = malloc(sizeof(struct _cleanup)));
+    UNSAFE_NULL_CHECK(cln = malloc(sizeof(struct _cleanup)));
 
     cln->alive = alive;
     cln->pids = ((struct _execLoopArgs *)args)->pids;
@@ -280,7 +284,7 @@ void *_execLoop(void *args)
     while (!(*terminate))
     {
         errno = 0;
-        // syncqueuePop is blocking, so if no jobs are present we will be stuck here.
+        // syncqueuePop is blocking, so if no jobs are present we will wait here.
         if ((curTask = (struct _exec *)syncqueuePop(queue)) == NULL)
         {
             if (errno == EINVAL)
@@ -291,6 +295,7 @@ void *_execLoop(void *args)
         // Check terminate again after the blocking call.
         if (*terminate)
         {
+            free(curTask);
             break;
         }
 
@@ -325,8 +330,9 @@ void _threadCleanup(void *args)
     void *saveptr = NULL;
     int i = 0, found = 0;
 
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
     // Enter the critical poolmtx portion, as we will be removing ourselves from the pool->_pids list.
-    PTHREAD_CHECK(pthread_mutex_lock(poolmtx));
+    VOID_PTHREAD_CHECK(pthread_mutex_lock(poolmtx));
     mine = pthread_self();
 
     // Look for ourselves in the list.
@@ -351,7 +357,7 @@ void _threadCleanup(void *args)
             free(el);
         }
     }
-    PTHREAD_CHECK(pthread_mutex_unlock(poolmtx));
+    VOID_PTHREAD_CHECK(pthread_mutex_unlock(poolmtx));
 
     // Now notify others we are no longer alive.
     atomicDec(1, alive);
@@ -363,9 +369,10 @@ void _threadCleanup(void *args)
     }
 
     free(cln);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 
     // Detach ourselves right before exit, as noone joins threads. It's not done before as threads should be cancellable while they are still in the pool->_pids list.
-    PTHREAD_CHECK(pthread_detach(mine));
+    VOID_PTHREAD_CHECK(pthread_detach(mine));
 }
 
 /**
@@ -383,13 +390,26 @@ void *_manage(void *args)
     size_t i;
     char log[500];
 
+    // stability controls how many rounds should go a certain way before the manager reacts.
+    const int stability = 5;
+    // balance keeps track of how many rounds we are in the negative(not enough threads) or positive(too many threads), and is reset each time we spawn or kill a thread, and every stability*2 rounds.
+    int balance = 0;
+    int roundCount = 0;
+
     // The manager also has to check for ThreadPool termination.
     while (!pool->_terminate)
     {
+        if (roundCount >= stability * 2)
+        {
+            balance = 0;
+            roundCount = 0;
+        }
+        roundCount++;
+
         // curSize is the curreng number of alive threads.
         curSize = atomicGet(pool->alive);
 
-        // To avoid filling the log with alives, we only notify on a changed size.
+        // To avoid filling the log with alives, we only log a changed size.
         if (curSize != lastSize)
         {
             sprintf(log, ">Alive:%ld", curSize);
@@ -411,28 +431,37 @@ void *_manage(void *args)
         }
 
         // If the job queue is empty, we probably have too many threads, and we start killing one per round of management.
-        if (pool->_queue->_len == 0 && curSize > pool->_coreSize)
+        else if (pool->_queue->_len == 0 && curSize > pool->_coreSize)
         {
-            task = malloc(sizeof(struct _exec));
-            task->fnc = &_die;
-            task->arg = NULL;
+            balance++;
+            if (balance > stability)
+            {
+                balance = 0;
+                roundCount = 0;
 
-            // To kill a thread we just push one _die task on the queue, once a thread pops it it will spontanously die.
-            syncqueuePush(task, pool->_queue);
-            logger(">Killed:1", "THREADPOOL");
+                task = malloc(sizeof(struct _exec));
+                task->fnc = &_die;
+                task->arg = NULL;
+
+                // To kill a thread we just push one _die task on the queue, once a thread pops it it will spontanously die.
+                syncqueuePush(task, pool->_queue);
+                logger(">Killed:1", "THREADPOOL");
+            }
         }
 
-        // If we have jobs in the queue and haven't reached maxSize, we spawn enough threads to reach either maxSize or the queue's length.
+        // If we have jobs in the queue and haven't reached maxSize, we spawn one thread.
         else if (syncqueueLen(*pool->_queue) > 0 && curSize < pool->_maxSize)
         {
-            size_t threadsToSpawn = _min(syncqueueLen(*pool->_queue), (pool->_maxSize - curSize));
-            for (i = threadsToSpawn; i > 0; i--)
+            balance--;
+            if (balance < -stability)
             {
-                _spawnThread(pool);
-            }
+                balance = 0;
+                roundCount = 0;
 
-            sprintf(log, ">Spawned:%ld", threadsToSpawn);
-            logger(log, "THREADPOOL");
+                _spawnThread(pool);
+
+                logger(">Spawned:1", "THREADPOOL");
+            }
         }
 
         // We run a round of management about 100 times a second.
@@ -493,6 +522,9 @@ void _threadpoolKILL(ThreadPool *pool)
 
         task->fnc = &_die;
         task->arg = NULL;
-        syncqueuePush(task, pool->_queue);
+        if (syncqueuePush((void *)task, pool->_queue) == -1)
+        {
+            free(task);
+        }
     }
 }
