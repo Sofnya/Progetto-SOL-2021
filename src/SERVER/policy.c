@@ -101,7 +101,9 @@ long lfuHeuristic(void *el)
     Metadata *target = (Metadata *)el;
     double lifespan = difftime(time(NULL), target->creationTime);
 
-    return target->numberAccesses / (long)lifespan;
+    // We multiply the number of Accesses by 1000 to get a decently precise integer result.
+    // TODO: A better solution would be implementing a listSort that uses a comparison function.
+    return (target->numberAccesses * 1000) / (long)lifespan;
 }
 
 /**
