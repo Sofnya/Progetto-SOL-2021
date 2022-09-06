@@ -23,10 +23,6 @@ void __mkdir(char *path)
     prev = strtok_r(path, "/", &saveptr);
     while ((cur = strtok_r(NULL, "/", &saveptr)) != NULL)
     {
-        if (verbose)
-        {
-            printf("Making dir:%s\n", prev);
-        }
 
         if (mkdir(prev, 0777) && errno != EEXIST)
         {
@@ -53,11 +49,6 @@ void __writeToDir(FileContainer *fc, size_t size, const char *dirname)
     if (dirname == NULL)
         return;
 
-    if (verbose)
-    {
-        printf("Writing %ld files to dir:%s\n", size, dirname);
-    }
-
     // For every FileContainer.
     for (i = 0; i < size; i++)
     {
@@ -74,11 +65,6 @@ void __writeToDir(FileContainer *fc, size_t size, const char *dirname)
             // And actually write it's contents to disk.
             fwrite(fc[i].content, 1, fc[i].size, file);
             fclose(file);
-
-            if (verbose)
-            {
-                printf("Wrote %s\n", path);
-            }
         }
         else
         {
@@ -106,11 +92,6 @@ void __writeBufToDir(void *buf, size_t size, const char *fileName, const char *d
     if (dirname == NULL)
         return;
 
-    if (verbose)
-    {
-        printf("Writing file %s to dir:%s\n", fileName, dirname);
-    }
-
     path = malloc(strlen(fileName) + 10 + strlen(dirname));
     sprintf(path, "%s/%s", dirname, fileName);
 
@@ -120,11 +101,6 @@ void __writeBufToDir(void *buf, size_t size, const char *fileName, const char *d
     {
         fwrite(buf, 1, size, file);
         fclose(file);
-
-        if (verbose)
-        {
-            printf("Wrote %s\n", path);
-        }
     }
     else
     {

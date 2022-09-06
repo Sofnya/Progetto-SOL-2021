@@ -75,6 +75,7 @@ int main(int argc, char *argv[])
         // WriteN.
         case ('w'):
         {
+            int res;
             n = 0;
             // Parse the argument to find dirname and the number of elements to write.
             if (strchr(optarg, ',') != NULL)
@@ -95,7 +96,11 @@ int main(int argc, char *argv[])
             if (n == 0)
                 n = INT32_MAX;
 
-            printf("Wrote %d files\n", writeNFiles(tmp, n, missDirName, delay));
+            res = writeNFiles(tmp, n, missDirName, delay);
+            if (verbose)
+            {
+                printf("Wrote %d files\n", res);
+            }
             break;
         }
         // Write.
@@ -125,6 +130,10 @@ int main(int argc, char *argv[])
                 usleep(delay);
                 closeFile(tmp);
 
+                if (verbose)
+                {
+                    printf("Succesfully wrote file %s\n", tmp);
+                }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
         }
@@ -175,6 +184,10 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
+                    if (verbose)
+                    {
+                        printf("Succesfully read file %s of size:%ld\n", tmp, size);
+                    }
                     // If we managed to read the file, write it to disk inside readDir.
                     __writeBufToDir(buf, size, tmp, readDirName);
                     free(buf);
@@ -376,13 +389,12 @@ int main(int argc, char *argv[])
         }
         default:
         {
-            puts("Unrecognized!");
+            puts("Option unrecognized!");
             break;
         }
         }
     }
 
-    puts("Exiting");
     if (sockname != NULL)
     {
         usleep(delay);
@@ -408,11 +420,6 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
     DIR *dir;
     struct dirent *cur;
     char *path;
-
-    if (verbose)
-    {
-        printf("Visiting directory: %s with n=%d\n", dirPath, n);
-    }
 
     dir = opendir(dirPath);
     if (dir == NULL)
