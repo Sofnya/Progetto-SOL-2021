@@ -115,6 +115,9 @@ int main(int argc, char *argv[])
     // We now have the config options needed to initialize our FileSystem.
     fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 
+    // We initialize our ThreadPool.
+    threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
+
     // And open our socket.
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
@@ -122,14 +125,21 @@ int main(int argc, char *argv[])
     strncpy(sa.sun_path, SOCK_NAME, UNIX_PATH_MAX - 1);
     sa.sun_path[UNIX_PATH_MAX - 1] = '\00';
 
-    ERROR_CHECK(bind(sfd, (struct sockaddr *)&sa, sizeof(sa)))
+    if (bind(sfd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
+    {
+        puts("Couldn't bind to requested address, terminating.");
+        threadpoolFastExit(&pool);
+        exit(EXIT_FAILURE);
+    }
 
-    ERROR_CHECK(listen(sfd, SOMAXCONN))
+    if (listen(sfd, SOMAXCONN) == -1)
+    {
+        puts("Couldn't listen on requested address, terminating.");
+        threadpoolFastExit(&pool);
+        exit(EXIT_FAILURE);
+    }
 
-    // We initialize our ThreadPool.
-    threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
-
-    // And now we only wait for new connections, accepting them and passing them to the ThreadPool to handle.
+    // And now we start waiting for new connections, accepting them and passing them to the ThreadPool to handle.
     while (1)
     {
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));

@@ -29,7 +29,10 @@ void load_config(char *path)
     int lineN = 0;
     long long tmp;
 
-    UNSAFE_NULL_CHECK(configFile = fopen(path, "r"));
+    if ((configFile = fopen(path, "r")) == NULL)
+    {
+        return;
+    }
 
     while (getline(&line, &len, configFile) != -1)
     {

@@ -1,10 +1,25 @@
+//SOCK_NAME imposta il path all address che verrà usato dal server, eventuali client dovranno connettersi allo stesso.
 SOCK_NAME=default_address
-CORE_POOL_SIZE=8
-MAX_POOL_SIZE=-1
+
+//MAX_FILES imposta il numero massimo di file che il server memorizzerà.
 MAX_FILES=100
+//MAX_MEMORY imposta la dimensione totale massima dei file che il server memorizzerà.
 MAX_MEMORY=100M
+
+//CORE_POOL_SIZE imposta il minimo numero di thread che il server terrà sempre vivi.
+CORE_POOL_SIZE=8
+//MAX_POOL_SIZE imposta il massimo numero di thread che il server spawnera, se MAX_POOL_SIZE=-1 non ci sono limiti superiori.
+MAX_POOL_SIZE=-1
+
+//ENABLE_COMPRESSION può essere TRUE o FALSE, rispettivamente abilitando o disabilitando la compressione automatica dei file.
 ENABLE_COMPRESSION=TRUE
+
+//VERBOSE_PRINT può essere TRUE o FALSE, se TRUE copiera il log su stdout.
 VERBOSE_PRINT=TRUE
+
+//LOG_FILE da il path al file di log che si vuole utilizzare.
 LOG_FILE=log
-// alternatives are: RANDOM*, FIFO, LIFO*, LRU, MRU*, LU, MU*, SMOL, BIGG where ones with a * are probably best avoided.
-POLICY=LRU
+
+//POLICY specifica la policy da utilizzare per gestire i capacity miss.
+//Le opzioni sono: RANDOM, FIFO, LIFO, LRU, MRU, LU, MU, SMOL, BIGG e LFU.
+POLICY=LFU

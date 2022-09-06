@@ -57,13 +57,3 @@ dkms.conf
 out/
 
 src/TESTS/testFiles/
-
-*.toc
-
-*.tex
-
-*.gz
-
-Relazione.log
-
-Relazione.aux
