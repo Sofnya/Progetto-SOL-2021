@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2022.8.27)  7 SEP 2022 17:11
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2022.8.27)  7 SEP 2022 17:55
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -298,30 +298,36 @@ LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 9
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
 ) [2] [3] [4]
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 1
-95.
+96.
  (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
 [5] (./Relazione.aux)
-Package rerunfilecheck Info: File `Relazione.out' has not changed.
-(rerunfilecheck)             Checksum: D5E03F95BE4AF8877810D7A67FD3BE93;2620.
+
+Package rerunfilecheck Warning: File `Relazione.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `Relazione.out':
+(rerunfilecheck)             Before: D5E03F95BE4AF8877810D7A67FD3BE93;2620
+(rerunfilecheck)             After:  9EAF4C23B42BE3F849FE7EA042B16447;2931.
  ) 
 Here is how much of TeX's memory you used:
- 7967 strings out of 480204
- 126051 string characters out of 5895010
+ 7969 strings out of 480204
+ 126079 string characters out of 5895010
  419908 words of memory out of 5000000
  25817 multiletter control sequences out of 15000+600000
  483880 words of font info for 56 fonts, out of 8000000 for 9000
  36 hyphenation exceptions out of 8191
- 60i,6n,63p,697b,422s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 60i,6n,63p,615b,420s stack positions out of 5000i,500n,10000p,200000b,80000s
 {/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc}</usr/share/texliv
 e/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/texmf-dist/
 fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw
 /times/utmr8a.pfb>
-Output written on Relazione.pdf (7 pages, 61733 bytes).
+Output written on Relazione.pdf (7 pages, 61651 bytes).
 PDF statistics:
- 165 PDF objects out of 1000 (max. 8388607)
- 148 compressed objects within 2 object streams
- 28 named destinations out of 1000 (max. 500000)
+ 167 PDF objects out of 1000 (max. 8388607)
+ 150 compressed objects within 2 object streams
+ 30 named destinations out of 1000 (max. 500000)
  161 words of extra memory for PDF output out of 10000 (max. 10000000)
 

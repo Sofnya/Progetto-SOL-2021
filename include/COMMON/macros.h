@@ -18,6 +18,12 @@
         perror("Error");                                             \
         return -1;                                                   \
     }
+// A quieter error check, since we expect many disconnections and such.
+#define SAFE_PIPE_CHECK(arg) \
+    if ((arg) == -1)         \
+    {                        \
+        return -1;           \
+    }
 #define UNSAFE_NULL_CHECK(arg)                                       \
     if ((arg) == NULL)                                               \
     {                                                                \

@@ -105,28 +105,28 @@ int sendMessage(int fd, Message *m)
         infoSize = 0;
     }
     // We first send the Message's type and status, which are of a known size (sizeof(int)).
-    SAFE_ERROR_CHECK(writeWrapper(fd, &m->type, sizeof(int)));
-    SAFE_ERROR_CHECK(writeWrapper(fd, &m->status, sizeof(int)));
+    SAFE_PIPE_CHECK(writeWrapper(fd, &m->type, sizeof(int)));
+    SAFE_PIPE_CHECK(writeWrapper(fd, &m->status, sizeof(int)));
 
     // Then we send the size of info, so that the receiving party can wait until they read all of it.
-    SAFE_ERROR_CHECK(writeWrapper(fd, &infoSize, sizeof(size_t)));
+    SAFE_PIPE_CHECK(writeWrapper(fd, &infoSize, sizeof(size_t)));
     if (infoSize != 0)
     {
         // And send info, if present.
-        SAFE_ERROR_CHECK(writeWrapper(fd, m->info, infoSize));
+        SAFE_PIPE_CHECK(writeWrapper(fd, m->info, infoSize));
     }
 #ifdef DEBUG
     printf("SEND:infoSize:%ld status:%d type:%d fd:%d\n", infoSize, m->status, m->type, fd);
 #endif
     // We do the same with the Message's content, first sending it's size.
-    SAFE_ERROR_CHECK(writeWrapper(fd, &m->size, sizeof(size_t)));
+    SAFE_PIPE_CHECK(writeWrapper(fd, &m->size, sizeof(size_t)));
 #ifdef DEBUG
     printf("SEND:size:%ld fd:%d\n", m->size, fd);
 #endif
     if (m->size != 0)
     {
         // And then the content, if any.
-        SAFE_ERROR_CHECK(writeWrapper(fd, m->content, m->size));
+        SAFE_PIPE_CHECK(writeWrapper(fd, m->content, m->size));
     }
 
 #ifdef DEBUG
@@ -152,10 +152,10 @@ int receiveMessage(int fd, Message *m)
 #endif
 
     // Like sending but in reverse.
-    SAFE_ERROR_CHECK(readWrapper(fd, &m->type, sizeof(int)));
-    SAFE_ERROR_CHECK(readWrapper(fd, &m->status, sizeof(int)));
+    SAFE_PIPE_CHECK(readWrapper(fd, &m->type, sizeof(int)));
+    SAFE_PIPE_CHECK(readWrapper(fd, &m->status, sizeof(int)));
 
-    SAFE_ERROR_CHECK(readWrapper(fd, &infoSize, sizeof(size_t)));
+    SAFE_PIPE_CHECK(readWrapper(fd, &infoSize, sizeof(size_t)));
 
 #ifdef DEBUG
     printf("REC:infoSize:%ld status:%d type:%d fd:%d\n", infoSize, m->status, m->type, fd);
@@ -167,10 +167,10 @@ int receiveMessage(int fd, Message *m)
     else
     {
         SAFE_NULL_CHECK(m->info = malloc(infoSize));
-        SAFE_ERROR_CHECK(readWrapper(fd, m->info, infoSize));
+        SAFE_PIPE_CHECK(readWrapper(fd, m->info, infoSize));
     }
 
-    SAFE_ERROR_CHECK(readWrapper(fd, &m->size, sizeof(size_t)));
+    SAFE_PIPE_CHECK(readWrapper(fd, &m->size, sizeof(size_t)));
 #ifdef DEBUG
     printf("REC:size:%ld fd:%d\n", m->size, fd);
 #endif
@@ -185,7 +185,7 @@ int receiveMessage(int fd, Message *m)
     {
 
         SAFE_NULL_CHECK(m->content = malloc(m->size));
-        SAFE_ERROR_CHECK(readWrapper(fd, m->content, m->size));
+        SAFE_PIPE_CHECK(readWrapper(fd, m->content, m->size));
     }
 #ifdef DEBUG
     printf("REC:done:%d\n", fd);

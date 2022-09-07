@@ -304,9 +304,6 @@ int fileLock(File *file)
     // We need to be careful that the File we are waiting to lock has not been destroyed in the meantime.
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
 
-    // We notify others of our presence.
-    file->waitingThreads++;
-
     // While the File remains locked, and not destroyed, we wait for something to change.
     while (!file->isDestroyed && file->isLocked)
     {

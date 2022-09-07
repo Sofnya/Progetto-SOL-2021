@@ -89,6 +89,7 @@ void cleanup(void)
     prettyPrintStats(fs.fsStats);
     prettyPrintFiles(&fs);
     fsDestroy(&fs);
+    listDestroy(&connections);
 
     logger("Done cleaning up, goodbye!", "STATUS");
 }

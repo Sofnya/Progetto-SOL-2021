@@ -20,7 +20,7 @@ int listInit(List *list)
 }
 
 /**
- * @brief Frees given List, freeing it's resources.
+ * @brief Destroys given List, freeing it's resources.
  *
  * @param list the List to destroy.
  * @return int 0 on success, -1 and sets errno otherwise.

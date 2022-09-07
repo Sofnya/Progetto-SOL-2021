@@ -180,18 +180,20 @@ Per mandare più File in un solo Message, come a seguito di una capacity miss o 
 
 \section{Migliorie Possibili}
 
-Per quanto il sistema WinSome nella forma corrente sia perfettamente funzionale, e capace di gestire un traffico moderatamente alto, sono possibili notevoli migliorie nella sua UI e performance.
-Un interfaccia grafica darebbe chiaramente un grande miglioramento della user experience.
-Dal punto di vista della performance, poi, identifichiamo alcuni bottleneck notevoli che, in caso di traffico troppo elevato potrebbero diventare dei problemi.
+Per quanto il sistema nella forma corrente sia perfettamente funzionale, e capace di gestire un traffico moderatamente alto, sono possibili notevoli migliorie nella sua usabilità.
 
-Il primo e più notevole è il singolo ReadWriteLock su ServerData. In quanto ogni connessione condivide deve condividere l'accesso a questo, se qualunque di queste ottiene una lock di write andrà a bloccare ogni altra connessione nella durata della sua operazione. Ciò si potrebbe mitigare con una strategia di lock più granulare, avendo quindi lock separate per ogni struttura dati, al costo di inserire una certa complessità nel codice. La soluzione migliore sarebbe in realtà banalmente di usare un sistema di database esistente come struttura dati di supporto, e ciò ci darebbe certamente un efficienza maggiore rispetto a una soluzione creata da noi.
+Un client interattivo, che aspetti quindi comandi da linea di comando, permetterebbe workflow molto più interattivi e complessi.
 
-Inoltre, l'implementazione delle comunicazioni TCP tramite threadpool va a creare un thread separato per ogni connessione che viene gestita. Questo è inefficiente se confrontato ad esempio a una soluzione che usi NIO e il multiplexing di canale, che andrebbe invece a usare un numero fisso di thread per gestire le connessioni in arrivo, con costi di context-switching notevolmente minori.
-Queste due migliorie permetterebbero probabilmente al server di gestire traffici molto più elevati in futuro.
+Inoltre, al posto di limitare i client a tenere una lock per volta, preferiremmo implementare metodi diversi di prevenzione dei deadlock. Primo tra questi sarebbe il sostituire la lockFile dell API con una lockFiles, che andrebbe come ora a unlockare automaticamente file precedentemente lockati, ma permetterebbe comunque di ottenere una lock su più file in sicurezza. Infatti, sapendo l'intera richiesta delle risorse future di un client, si può implementare un algoritmo del banchiere, o, più semplicemente, ordinare le operazioni di lock in base al nome del File bersaglio.
 
-Detto questo, non crediamo necessarie al momento eccessive ottimizzazioni, che ci paiono premature rispetto al numero di utenti attivi (0).
+Inoltre, per quanto l'API e il server supportino un operazione di append, questa non viene mai chiamata dal client. Si potrebbe certamente fare uso di più comandi lato client, tra cui un modo di stampare una lista dei file presenti, e la capacità di fare un append a un file già esistente.
 
-\section{Codice di terze parti}
+\section{Github e codice di terze parti}
+\subsection{Github}
+Tutto il codice dell progetto, e la relazione, sono presenti sul github pubblico \url{https://github.com/Sofnya/Progetto-SOL-2021}.
+Notare che molti commit sembrano apparire dall account wit00, di cui non sono a conoscenza. Sembra un errore nel mio client di git, in quanto questi commit appaiono da quando sono passata a GitKraken.
+
+\subsection{Codice di terze parti}
 Per l'implementazione dell HashTable utilizziamo la funzione hash Murmur3 sviluppata da Austin Appleby e hostata su github al link \url{https://github.com/aappleby/smhasher}. Questa è rilasciata nel dominio pubblico senza copyright.
 
 Utilizziamo inoltre la libreria zlib per la compressione dei File. Questa è copyright di Jean-loup Gailly e Mark Adler, che ne permettono l'utilizzo libero. Il progetto è trovabile a \url{https://www.zlib.net/}.

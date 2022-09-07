@@ -537,6 +537,11 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
 
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
 
+    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
+    // We notify others of our presence.
+    file->waitingThreads++;
+    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+
     PTHREAD_CHECK(UNLOCK);
     tmp = fileLock(file);
     if (tmp != 0)
