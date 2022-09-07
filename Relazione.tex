@@ -72,6 +72,12 @@ Per lanciare il server, dopo averlo compilato, eseguire il file server.out, pass
 Un file di configurazione valido è una serie di coppie CHIAVE=VALORE, ognuna su una linea diversa.
 Il file di configurazione può anche includere commenti, cioè linee che iniziano con // verranno ignorate. Le chiavi disponibili, insieme a una breve descrizione dei loro effetti e ai loro valori di default, possono essere trovati nel file config.txt generato durante la compilazione del server.
 
+\subsubsection{File di log e statistiche.sh}
+
+Il server produce automaticamente un file di log, in formato human readable.
+Compilando il server viene anche automaticamente generato lo script statistiche.sh. Chiamando questo con come argomento il path a un file di log valido stamperà su schermo una serie di statistiche utili.
+Per chiamarlo sul risultato dei test, una volta nella cartella out/ basta eseguire il comando ./statistiche.sh test[1,2,3]/log
+
 \section{Architettura del Server}
 
 Il client ha un architettura estremamente semplice, limitandosi a parsare le opzioni da linea di comando e lanciando le richieste necessarie al server tramite l'API. Per questo non è particolarmente interessante, e ci limiteremo a parlare dell' architettura del server.

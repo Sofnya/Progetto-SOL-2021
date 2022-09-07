@@ -1,14 +1,13 @@
 CC = gcc
-CFLAGS = -std=gnu11 -g -Wall -pthread  -I include 
+CFLAGS = -std=gnu11 -g -Wall -pthread  -I include
 LIBRARY = -lz -L deps
 obj_dir = obj/
 client_objects = $(obj_dir)CLIENT/api.o $(obj_dir)CLIENT/client.o $(obj_dir)CLIENT/clientHelpers.o
 common_objects = $(obj_dir)COMMON/atomicint.o $(obj_dir)COMMON/fileContainer.o $(obj_dir)COMMON/hashtable.o $(obj_dir)COMMON/helpers.o $(obj_dir)COMMON/list.o $(obj_dir)COMMON/message.o $(obj_dir)COMMON/murmur3.o $(obj_dir)COMMON/syncqueue.o  
 server_objects = $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/server.o $(obj_dir)SERVER/connstate.o  $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/threadpool.o $(obj_dir)SERVER/logging.o
-test_objects = $(obj_dir)TESTS/unitTest.o $(obj_dir)TESTS/apiTester.o
 parser_objects = $(obj_dir)PARSER/parser.o
 
-objects =  $(client_objects) $(common_objects) $(server_objects) $(test_objects) $(parser_objects)
+objects =  $(client_objects) $(common_objects) $(server_objects) $(parser_objects)
 
 .PHONY: all server client unitTest clean stressTester apiTester test1 test2 test3 parser
 
