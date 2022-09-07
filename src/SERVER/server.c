@@ -22,6 +22,8 @@
 int sfd;
 ThreadPool pool;
 FileSystem fs;
+List connections;
+pthread_mutex_t connLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct _messageArgs
 {
@@ -57,6 +59,17 @@ void signalHandler(int signum)
     }
     else
     {
+        int *cur;
+        // First we disconnect all clients. Note we aren't accepting any new connections(the main is here in the handler!).
+        pthread_mutex_lock(&connLock);
+        while (listSize(connections) > 0)
+        {
+            listPop((void **)&cur, &connections);
+            close(*cur);
+            free(cur);
+        }
+        pthread_mutex_unlock(&connLock);
+        // Then call the actual exit.
         threadpoolFastExit(&pool);
     }
 
@@ -85,7 +98,6 @@ int main(int argc, char *argv[])
     int fdc;
     int *curFd;
     struct sockaddr_un sa;
-    List connections;
 
     // Register our signalHandler.
     signal(SIGQUIT, &signalHandler);
@@ -113,6 +125,7 @@ int main(int argc, char *argv[])
 
     logger("Starting", "STATUS");
 
+    listInit(&connections);
     // We now have the config options needed to initialize our FileSystem.
     fsInit(MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, &fs);
 
@@ -146,6 +159,10 @@ int main(int argc, char *argv[])
         ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
         SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
         *curFd = fdc;
+
+        pthread_mutex_lock(&connLock);
+        listPush((void *)curFd, &connections);
+        pthread_mutex_unlock(&connLock);
         threadpoolSubmit(&handleConnection, curFd, &pool);
     }
 }
@@ -169,7 +186,9 @@ void handleConnection(void *fdc)
     int err;
     args.fd = fd;
     bool done = false;
-    free(fdc);
+
+    int *curEl, i = 0;
+    void *saveptr = NULL;
 
     // Every connection has it's own ConnState.
     connStateInit(&fs, &state);
@@ -236,7 +255,32 @@ void handleConnection(void *fdc)
     }
 
     logDisconnect(state);
-    close(fd);
+
+    // Need to keep the alive connections updated.
+    pthread_mutex_lock(&connLock);
+    while (listScan((void **)&curEl, &saveptr, &connections) != -1)
+    {
+        if (*curEl == fd)
+        {
+            listRemove(i, NULL, &connections);
+            close(*curEl);
+            free(curEl);
+        }
+        i++;
+    }
+    if (errno == EOF)
+    {
+        if (*curEl == fd)
+        {
+            listRemove(i, NULL, &connections);
+            close(*curEl);
+            free(curEl);
+        }
+        i++;
+    }
+    // If we didn't find ourselves we have already been closed by the main thread.
+    pthread_mutex_unlock(&connLock);
+
     connStateDestroy(&state);
     return;
 }
