@@ -72,7 +72,6 @@ Per lanciare il server, dopo averlo compilato, eseguire il file server.out, pass
 Un file di configurazione valido è una serie di coppie CHIAVE=VALORE, ognuna su una linea diversa.
 Il file di configurazione può anche includere commenti, cioè linee che iniziano con // verranno ignorate. Le chiavi disponibili, insieme a una breve descrizione dei loro effetti e ai loro valori di default, possono essere trovati nel file config.txt generato durante la compilazione del server.
 
-
 \section{Architettura del Server}
 
 Il client ha un architettura estremamente semplice, limitandosi a parsare le opzioni da linea di comando e lanciando le richieste necessarie al server tramite l'API. Per questo non è particolarmente interessante, e ci limiteremo a parlare dell' architettura del server.
@@ -89,6 +88,9 @@ Il main si occupa dello startup del server, facendo il parsing del file di confi
 \subsubsection{ThreadPool Manager}
 Il manager della ThreadPool è un thread che gestisce tale struttura. Si occupa principalmente di generare e uccidere thread a seconda delle necessità, oltre a svolgere un ruolo nella terminazione della ThreadPool. I thread generati al suo interno si occupano poi indipendentemente di consumare la queue di task submittate alla ThreadPool.
 
+È stato scelto di implementare una ThreadPool dinamica, quindi che si ridimensioni a seconda del carico di lavoro, per permettere al server di essere più reattivo di fronte ad alti numeri di connessione.
+Sopratutto, dato che ogni thread si occupa di una singola connessione, operazioni bloccanti quali una lock andrebbero a bloccare una grande parte delle risorse del server, senza un effettivo uso di cpu. Il server può comunque essere eseguito con una ThreadPool statica semplicemente impostando la CORE\_POOL\_SIZE uguale alla MAX\_POOL\_SIZE nell file di configurazione. Test1 e Test2 sono eseguiti così di default, mentre il Test3 ha di default una MAX\_POOL\_SIZE illimitata, in modo da poter testare anche questa funzionalità. Se questo fosse un problema vi invito gentilmente a cambiare il file di configurazioni src/TESTS/test3.txt prima di eseguire il make test3.
+
 \subsubsection{Worker Thread}
 I worker thread si occupano di consumare le task submittate alla ThreadPool. Il server genererà una task per ogni connessione, e quindi i worker thread andranno a occuparsi della gestione di un intera connessione alla volta, secondo il seguente loop: 
 \begin{itemize}
@@ -101,7 +103,10 @@ I worker thread si occupano di consumare le task submittate alla ThreadPool. Il 
 
 \end{itemize}
 
-I worker thread vanno inoltre a tenere traccia dello stato della loro connessione corrente, tenendo aggiornata una struttura ConnState.
+Questo loop tende chiaramente a fare molte chiamate bloccanti, in quanto sia la ricezione che l'invio dipendono dalla disponibilità del client, oltre ad eventuali richieste di lock.
+Non abbiamo considerato che questo fosse un grande problema in vista della ThreadPool dinamica, che ci permette di generare un numero adeguato di worker thread, sfruttando quindi il multi-threading al suo massimo per ottimizzare chiamate bloccanti o I/O bound.
+\\
+I worker thread vanno anche a tenere traccia dello stato della loro connessione corrente, tenendo aggiornata una struttura ConnState.
 
 \subsection{Stato del server}
 Il server deve tenere traccia di:
@@ -135,7 +140,7 @@ Un File è visto come un buffer di una certa dimensione, identificato univocamen
 I File supportano una compressione seamless, opzionalmente attivabile dal file di config. Se questi vengono impostati come compressi, infatti, sulle write/append comprimeranno automaticamente i propri contenuti. Nelle read, invece, li decomprimeranno nel buffer del risultato. La compressione è implementata dalla libreria zlib.
 
 Se un operazione farebbe superare al FileSystem i limiti della capacità stabiliti all inizializzazione, non la esegue, restituendo EOVERFLOW in errno. Quando accade ciò il chiamante dovrà occuparsi di chiamare freeSpace() specificando quanto spazio liberare, causando una capacity miss.
-Le capacity miss sono gestite quindi all interno di freeSpace, che farà una chiamata alla policy per la scelta di un bersaglio da eliminare. Questo prenderà sempre il primo File (non locked) dalla List dei metadati, che verrà però prima ordinata secondo un euristica appropriata a seconda della policy scelta in configurazione. Tramite questo meccanismo sono supportate policy arbitrarie.
+Le capacity miss sono gestite quindi all interno di freeSpace, che farà una chiamata alla policy per la scelta di un bersaglio da eliminare. Questo prenderà sempre il primo File (non locked) dalla List dei metadati, che verrà però prima ordinata secondo un euristica appropriata a seconda della policy scelta in configurazione. Tramite questo meccanismo sono supportate policy arbitrarie, di cui ne è implementata una certa varieta, dalle più alle meno ottimali (o sensate).
 
 \subsubsection{ThreadPool}
 
@@ -149,7 +154,7 @@ La struttura ThreadPool deve tenere traccia di:
 \end{description}
 
 La terminazione dei worker thread è gestita prima di tutto con la flag terminate. Questa viene controllata da ogni worker thread prima e dopo l'aver estratto una task dalla SyncQueue. In quanto thread in attesa di nuovi lavori nella SyncQueue sono però deschedulati, vengono anche inseriti nella pool dei lavori fittizi die(), che causano la terminazione del thread chiamante, svegliando quindi e terminando tutti i thread in attesa.
-Si supporta inoltre la cancellazione dei worker thread, per quanto questa sia sconsigliata in quanto rischia di portare alla perdita di risorse. Questa viene chiamata nella FastExit come ultima risorsa, se i thread non terminano in modo pulito entro 5 secondi.
+Si supporta inoltre la cancellazione dei worker thread, per quanto questa sia sconsigliata in quanto rischia di portare alla perdita di risorse. Questa viene chiamata nella FastExit solo come ultima risorsa, se i thread non terminano in modo pulito in un tempo ragionevole.
 
 \subsubsection{ConnState}
 
@@ -191,12 +196,12 @@ Inoltre, per quanto l'API e il server supportino un operazione di append, questa
 \section{Github e codice di terze parti}
 \subsection{Github}
 Tutto il codice dell progetto, e la relazione, sono presenti sul github pubblico \url{https://github.com/Sofnya/Progetto-SOL-2021}.
-Notare che molti commit sembrano apparire dall account wit00, di cui non sono a conoscenza. Sembra un errore nel mio client di git, in quanto questi commit appaiono da quando sono passata a GitKraken.
+Notare che molti commit appaiono erroneamente dall account "wit00", non mi è chiaro a chi appartenga. Sembra un errore nel mio client di git, in quanto questi commit con autore errato appaiono da quando sono passata a GitKraken.
 
 \subsection{Codice di terze parti}
 Per l'implementazione dell HashTable utilizziamo la funzione hash Murmur3 sviluppata da Austin Appleby e hostata su github al link \url{https://github.com/aappleby/smhasher}. Questa è rilasciata nel dominio pubblico senza copyright.
 
-Utilizziamo inoltre la libreria zlib per la compressione dei File. Questa è copyright di Jean-loup Gailly e Mark Adler, che ne permettono l'utilizzo libero. Il progetto è trovabile a \url{https://www.zlib.net/}.
+Utilizziamo inoltre la libreria zlib per la compressione dei File. Questa è copyright di Jean-loup Gailly e Mark Adler, che ne permettono l'utilizzo libero. Il progetto è trovabile all indirizzo \url{https://www.zlib.net/}.
 
 Infine, per generare i nostri UUID, utilizziamo un frammento di codice preso da stackoverflow cortesia dell utente themoondotshine all indirizzo \url{https://stackoverflow.com/a/2182269}.
 

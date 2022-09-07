@@ -33,7 +33,7 @@ Stats parse(const char *path)
     Stats stats;
     FILE *logFile;
 
-    char *line = NULL, *preamble = NULL, *value = NULL, *saveptr = NULL, *type = NULL, *tid = NULL;
+    char *line = NULL, *preamble = NULL, *value = NULL, *saveptr = NULL, *type = NULL;
     char *innersaveptr = NULL, *value1 = NULL, *value2 = NULL;
 
     size_t len = 0;
@@ -91,8 +91,10 @@ Stats parse(const char *path)
 
         // The preamble contains the date/hour.
         preamble = strtok_r(line, "\t", &saveptr);
-        // Unused for now, could be used to keep track of every singular thread's actions.
-        tid = strtok_r(NULL, "\t", &saveptr);
+
+        // The tid is unused for now, could be used to keep track of every singular thread's actions.
+        strtok_r(NULL, "\t", &saveptr);
+
         // The actual entry in the log.
         value = strtok_r(NULL, "\t", &saveptr);
 

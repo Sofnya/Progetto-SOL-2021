@@ -145,7 +145,8 @@ void threadpoolFastExit(ThreadPool *pool)
         // 10ms sleep done 500 times is 5s
         usleep(10000);
     }
-    // Otherwise cancel them.
+    // Otherwise cancel them. Note that if no threads are alive threadpoolCancel has no effect.
+    // Cancelling the threadpool is only done as a last resort, in case any threads are stuck, and will lead to loss of resources.
     threadpoolCancel(pool);
 
     logger("Joining manager...", "STATUS");

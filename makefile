@@ -24,17 +24,13 @@ client: $(client_objects) $(common_objects)
 unitTest: $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) 
 	$(CC) $(CFLAGS) $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) -o out/unitTest.out $(LIBRARY)
 
-apiTester: $(obj_dir)TESTS/apiTester.o $(obj_dir)CLIENT/api.o $(common_objects)
-	$(CC) $(CFLAGS) $(obj_dir)TESTS/apiTester.o $(obj_dir)CLIENT/api.o $(common_objects) -o out/apiTester.out $(LIBRARY)
-
-stressTester: 
-	cp src/TESTS/stressTester.sh  out/stressTester.sh
 
 parser: $(parser_objects) $(common_objects)
 	$(CC) $(CFLAGS) $(parser_objects) $(common_objects) -o out/parser.out $(LIBRARY)
 	cp src/PARSER/statistiche.sh out/
 
 test1: server client
+	rm -rf out/test1;
 	cp -r src/TESTS/test1 out/
 
 	cp src/TESTS/setupTestFiles.sh src/TESTS/createRandomFiles.sh out/test1
@@ -44,6 +40,7 @@ test1: server client
 	cd out/test1; ./test1.sh
 
 test2: server client
+	rm -rf out/test2;
 	cp -r src/TESTS/test2 out/
 
 	cp src/TESTS/setupTestFiles.sh src/TESTS/createRandomFiles.sh out/test2
@@ -53,6 +50,7 @@ test2: server client
 	cd out/test2; ./test2.sh
 
 test3: server client
+	rm -rf out/test3;
 	cp -r src/TESTS/test3 out/
 
 	cp src/TESTS/setupTestFiles.sh src/TESTS/createRandomFiles.sh out/test3
