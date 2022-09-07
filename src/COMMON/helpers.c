@@ -108,6 +108,7 @@ void *_innerCall(void *arg)
  */
 void genUUID(char *uuid)
 {
+    // Cortesia dell utente di stackoverflow "themoondotshine" https://stackoverflow.com/a/2182269
     sprintf(uuid, "%x%x-%x-%x-%x-%x%x%x",
             rand(), rand(),               // Generates a 64-bit Hex number
             rand(),                       // Generates a 32-bit Hex number

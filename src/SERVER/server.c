@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
     int fdc;
     int *curFd;
     struct sockaddr_un sa;
+    List connections;
 
     // Register our signalHandler.
     signal(SIGQUIT, &signalHandler);

@@ -1,9 +1,10 @@
 \documentclass[11pt]{article}
 \usepackage[margin=2cm]{geometry}
 \usepackage{times}
+\usepackage{hyperref}
 \title{Relazione Progetto SOL 2020-2021}
 
-\date{06/09/2022}
+\date{07/09/2022}
 \author{Sofia Pisani \\ Matricola: 646301}
 \begin{document}
 
@@ -80,160 +81,102 @@ Il server ha infatti una struttura ben più complessa, dovendo gestire i file me
 
 \subsection{Layout dei Thread}
 Il server funziona su multipli thread:
+
+\subsubsection{Main Thread}
+Il main si occupa dello startup del server, facendo il parsing del file di config, inizializzando appropriatamente le strutture dati necessarie, e inizializzando la ThreadPool. Una volta fatto questo andra ad accettare connessioni, e passarle alla ThreadPool perchè le gestisca.
+\\Infine, gestisce la terminazione intercettando i segnali SIGINT SIGHUP e SIGQUIT alla cui ricezione provvedera a liberare le risorse e a stampare il sunto delle statistiche.
+
+\subsubsection{ThreadPool Manager}
+Il manager della ThreadPool è un thread che gestisce tale struttura. Si occupa principalmente di generare e uccidere thread a seconda delle necessità, oltre a svolgere un ruolo nella terminazione della ThreadPool. I thread generati al suo interno si occupano poi indipendentemente di consumare la queue di task submittate alla ThreadPool.
+
+\subsubsection{Worker Thread}
+I worker thread si occupano di consumare le task submittate alla ThreadPool. Il server genererà una task per ogni connessione, e quindi i worker thread andranno a occuparsi della gestione di un intera connessione alla volta, secondo il seguente loop: 
 \begin{itemize}
-\item
-Il main si occupa dello startup del server, facendo il parsing del file di config, inizializzando appropriatamente le strutture dati necessarie, e inizializzando la ThreadPool. Una volta fatto questo si occuperà unicamente di accettare connessioni, e passarle alla ThreadPool perchè le gestisca.
-\\Si occupa inoltre della terminazione, essendo l'unico thread che non blocchi i segnali SIGINT, SIGQUIT e SIGHUP.
 
-\item
-Il manager della ThreadPool è un thread che si occupa della gestione di tale struttura. Si occupa principalmente di generare e uccidere thread a seconda della necessità, oltre a svolgere un ruolo nella terminazione della ThreadPool. I thread generati al suo interno si occupano poi indipendentemente di consumare la queue di lavoro interna alla ThreadPool.
+\item Ricezione della richiesta.
 
-\item 
-I worker thread si occupano di consumare le task submittate alla ThreadPool. Il server genererà una task per ogni connessione, e quindi i worker thread andranno a occuparsi della gestione delle connessioni, accettando richieste, processandole (andando quindi anche a modificare il FileSystem), e restituendo risposte appropriate.
+\item Processing della richiesta, facendo le adeguate chiamate al FileSystem e generando una risposta adeguata.
+
+\item Invio della risposta.
 
 \end{itemize}
+
+I worker thread vanno inoltre a tenere traccia dello stato della loro connessione corrente, tenendo aggiornata una struttura ConnState.
 
 \subsection{Stato del server}
 Il server deve tenere traccia di:
 \begin{description}
 
-\item[Informazioni relative ai file memorizzati] Vengono conservate nella struttura FileSystem, e gestite tramite le funzioni che usano questa struttura.
+\item[Informazioni relative ai file memorizzati.] Vengono conservate nella struttura FileSystem, e gestite tramite le funzioni che usano questa struttura.
 
-\item[Informazioni relative alle singole connessioni] Ogni thread gestisce una connessione singola, e ne ricorda lo stato in una struttura ConnState. Informazioni rilevanti sono ad esempio i file aperti al momento e il file lockato se presente.
+\item[Informazioni relative alle singole connessioni.] Ogni thread gestisce una connessione singola, e ne ricorda lo stato in una struttura ConnState. Informazioni rilevanti sono ad esempio i file aperti al momento e il file lockato se presente.
 
-\item[Informazioni relative ai thread in esecuzione] Queste vengono gestite autonomamente dalla ThreadPool.
+\item[Informazioni relative ai thread in esecuzione.] Queste vengono gestite autonomamente dalla ThreadPool.
 
 \end{description}
 
+Queste tre strutture dati sono le più complesse e interessanti, e sono quindi quelle di cui parleremo nel dettaglio.
 
 \subsubsection{FileSystem}
+Il FileSystem deve tenere traccia di:
+\begin{description}
 
-Il server inizia dal ServerMain, che fa poi partire gli altri thread nella fase di setup.
+\item[I File presenti nella memoria.] Vengono conservati in un HashTable per permettere accessi efficienti.
+
+\item[La capacità corrente del server.] Il numero corrente di File nel FileSystem e la dimensione totale di questi vengono conservati in due AtomicInt.
+
+\item[I metadati dei File.] Questi servono ad implementare delle policy informate per la gestione dei capacity miss. Vengono conservati in una List.
+
+\end{description}
+
+Per la gestione della concorrenza, abbiamo un R/W lock su tutto il FileSystem, e una mutex per gli accessi alla lista dei metadati. L'implementazione dell HashTable è inoltre thread-safe, permettendo accessi concorrenti.
+
+Un File è visto come un buffer di una certa dimensione, identificato univocamente da un nome. Non essendo nel FileSystem presente un astrazione delle directory, il nome è l'intero path al File.
+I File supportano una compressione seamless, opzionalmente attivabile dal file di config. Se questi vengono impostati come compressi, infatti, sulle write/append comprimeranno automaticamente i propri contenuti. Nelle read, invece, li decomprimeranno nel buffer del risultato. La compressione è implementata dalla libreria zlib.
+
+Se un operazione farebbe superare al FileSystem i limiti della capacità stabiliti all inizializzazione, non la esegue, restituendo EOVERFLOW in errno. Quando accade ciò il chiamante dovrà occuparsi di chiamare freeSpace() specificando quanto spazio liberare, causando una capacity miss.
+Le capacity miss sono gestite quindi all interno di freeSpace, che farà una chiamata alla policy per la scelta di un bersaglio da eliminare. Questo prenderà sempre il primo File (non locked) dalla List dei metadati, che verrà però prima ordinata secondo un euristica appropriata a seconda della policy scelta in configurazione. Tramite questo meccanismo sono supportate policy arbitrarie.
 
 \subsubsection{ThreadPool}
 
-Il ServerMain si occupa principalmente dello startup del server, all completamento del quale entra in un loop in attesa di un comando di "exit" da linea di comando. 
+La struttura ThreadPool deve tenere traccia di:
+\begin{description}
 
-\begin{itemize}
+\item[Le task da eseguire.] Vengono conservate in una SyncQueue, una coda sincrona che permette ai thread di venire deschedulati mentre attendono nuovi elementi.
 
-\item
-Durante lo startup inizializza il file di configurazione. Da questo prende il path per il serverData, e, se questo si trova sul disco, lo inizializza caricandolo da disco, alternativamente inizializza un serverData pulito.
+\item[I thread vivi.] Tiene il numero dei thread vivi in un AtomicInt, e i loro pid in una List. Queste sono aggiornate automaticamente dai worker thread alla loro nascita e morte.
 
-\item
-Va poi ad assegnare delle task periodiche ad uno scheduler, in particolare il salvataggio dei dati del server e il calcolo delle ricompense. Lo scheduler si assicurerà di gestire i thread lanciandoli ad intervalli appropriati.
+\end{description}
 
-\item
-Inizializza quindi il socket TCP e il servizio di registrazione RMI, che gestirà indipendentemente i thread necessari alla registrazione di nuovi utenti.
-
-\item
-Infine, prima di entrare in un loop in cui ascolta comandi dell'utente, inizializza un thread TCPHandler con le informazioni sulla connessione TCP, e lo lancia.
-
-\item
-Nel caso riceva un comando di "exit" si occuperà poi della chiusura pulita del server, notificando tutti i thread iniziati di terminare appena possibile e facendo un ultimo salvataggio dei dati in serverData.
-
-
-\end{itemize}
+La terminazione dei worker thread è gestita prima di tutto con la flag terminate. Questa viene controllata da ogni worker thread prima e dopo l'aver estratto una task dalla SyncQueue. In quanto thread in attesa di nuovi lavori nella SyncQueue sono però deschedulati, vengono anche inseriti nella pool dei lavori fittizi die(), che causano la terminazione del thread chiamante, svegliando quindi e terminando tutti i thread in attesa.
+Si supporta inoltre la cancellazione dei worker thread, per quanto questa sia sconsigliata in quanto rischia di portare alla perdita di risorse. Questa viene chiamata nella FastExit come ultima risorsa, se i thread non terminano in modo pulito entro 5 secondi.
 
 \subsubsection{ConnState}
 
-Il TCPHandler si occupa di aspettare nuove connessioni e creare dei thread ConnectionHandler per gestirle. I thread vengono gestiti da una threadpool, questo permette flessibilità nel numero di connessioni attive e va a minimizzare il tempo di accettazione di una nuova connessione.
-
-\subsubsection{ConnectionHandler}
-
-Ogni thread ConnectionHandler gestisce quindi una singola connessione.
-Questi tengono traccia delle informazioni relative alla singola connessione TCP, e quindi anche del corrente stato di autorizzazione della connessione. Il ConnectionHandler si occupa di rispondere a Request del client, aggiornando inoltre serverData in modo appropriato.
-Lavora in un ciclo del tipo:
-
-\begin{enumerate}
-
-\item Aspetta una Request dal client.
-
-\item Avendo ricevuto una Request la gestisce all interno di HandleRequest, effettuando eventuali query/alterazioni a serverData e allo stato della connessione, e generando una Response adeguata.
-
-\item Restituisce al client la Response generata al passo precedente.
-
-\end{enumerate}
-
-Il grosso della logica necessario per aggiornare correttamente lo stato del server è implementato in serverData, e ConnectionHandler si occupa principalmente di interpretare le richieste e passarne i parametri ai metodi di serverData adeguati.
-Questo approccio ci permette di effettuare una forte separazione delle responsabilità. Ci semplifica inoltre notevolmente il compito di tenere correttamente aggiornate le complesse strutture dati di supporto interne a ServerData.
-
-\subsubsection{SaveHandler}
-
-Il SaveHandler viene eseguito periodicamente dallo scheduler, con tempo tra un esecuzione e un altra preso dal file di configurazione.
-All'interno del SaveHandler si fa solo una chiamata al metodo save di serverData, che contiene al suo interno la logica necessaria al salvataggio dei propri dati.
-Un salvataggio periodico dei dati permette agli amministratori del server di scegliere a piacere un tempo massimo tra un backup e il prossimo, ottenendo quindi il tradeoff performance/affidabilità ottimale per il proprio caso.
-
-
-\subsubsection{RewardHandler}
-
-Il RewardHandler viene eseguito periodicamente dallo scheduler.
-All'interno del RewardHandler si vanno ad effettuare tutti i calcoli relativi al ciclo corrente di reward, effettuando query a serverData e aggiornando poi questa con i nuovi valori dei Wallet degli utenti.
-Infine, prima di terminare, effettua un write in multicast a tutti i client in ascolto, che riceveranno quindi una notifica non appena viene completato un ciclo di reward.
-
-\break
-
-\section{Classi Principali}
-
-Le classi sono divise in 3 package:
-
+La struttura ConnState deve tenere traccia di:
 \begin{description}
 
-\item[Client] Di poco interesse, le sue classi implementano solo la poca logica necessaria al funzionamento del thinclient.
+\item[I file aperti.] I FileDescriptor restituiti dal FileSystem vengono conservati in un HashTable con chiave il nome del File.
 
-\item[Server] Contiene le classi relative ai thread listati sopra, con un eccezione interessante; ServerData.
-
-\item[Common] Contiene classi rappresentanti i costrutti principali del modello di WinSome, quali User, Post, Comment etc.
+\item[Il file locked.] Il FileDescriptor di un eventuale File in stato locked viene anche conservato separatamente, in modo da poter implementare un limite ad un singolo File locked per connessione.
 
 \end{description}
+All apertura  di un File, il FileSystem genera un FileDescriptor. Questo associa al nome del File delle flag, che segnano quali permessi l'utilizzatore ha su di questo (lettura, scrittura, se il File è lockato o meno). Per successive operazioni sul File dovremo poi usare questo FileDescriptor.
+\\
+È stato scelto di limitare il numero di File locked in un determinato momento a uno per connessione. Quando quindi una connessione va a chiedere la lock di un File, implicitamente richiede la unlock di eventuali File che tenesse locked.
+Questa scelta implementativa ci è sembrata ragionevole e giustificata per una serie di motivazioni.
+Prima di tutto, nell API come dato nel testo del progetto, è implicito che due client possano mandarsi in deadlock a vicenda. Se infatti il ClientA locka prima file1 e poi file2, e ClientB locka prima file2 e poi file1, per le specifiche dell API si deve andare in deadlock, almeno che non si possano rilasciare File già lockati. Questo è quello che facciamo, rilasciando sempre il file già locked, limitando quindi i client a un solo file locked alla volta, e risolvendo qualsiasi situazione di deadlock tra client.
+Inoltre, sono pochi i workflow in cui sarebbe ragionevole ottenere la lock su più file in contemporanea, mentre qualsiasi workflow rischierebbe di andare in deadlock senza questa limitazione.
+Ci sembra una buona idea dare agli utenti una limitazione chiara se gli evitiamo così i rischi di malfunzionamenti ben più opachi. 
 
-Analizziamo le strutture dati del modello di WinSome con un approccio top-down, iniziando quindi da ServerData.
+\section{Comunicazione Client/Server}
 
-\subsection{ServerData}
+La comunicazione client/server accade tramite socket AF\_UNIX.
+Sopra questi socket vengono serializzati e deserializzati una serie di strutture, prima di tutte il Message.
+I Message rappresentano alternativamente una richiesta dal client al server, o una risposta dal server al client. Contengono due valori numerici: Un tipo, che contiene il tipo della richiesta (ad esempio di read o di write),e uno status, che contiene l'esito della risposta (OK o un qualche tipo di errore).
+Contengono inoltre una stringa null terminata info, in cui il server metterà messaggi informativi sul esito della richiesta, e che il client userà a seconda della richiesta, spesso per specificare il nome del File bersaglio. Infine possiedono un contenuto, un array di bytes che può essere usato a seconda della richiesta, o in risposta per mandare contenuti di file in seguito a una read o a un capacity miss.
 
-La classe ServerData gestisce tutti i dati relativi ad un istanza di WinSome. Questi sono fondamentalmente una collezione di User, una collezione di Post, e una collezione di coppie username:passwordHash, più delle strutture di supporto.
-User, hash delle password e Post vengono conservati in delle HashMap con chiavi i rispettivi identificatori univoci (Username e Id), in modo da permettere un accesso rapido ai dati necessari.
-Le hash delle password vengono conservate al di fuori dell'User a cui sono relative per questioni di sicurezza, permettendo più granularità su da dove queste siano visibili.
-
-Abbiamo poi una  serie di strutture di supporto, di cui spieghiamo brevemente l'utilità.
-
-\begin{description}
-
-\item[UsersByTags] rappresenta un mapping (tag \textrightarrow  \space lista usernames). Permette di risalire efficientemente da una determinata tag alla lista degli User con quella tag. Questo velocizza l'operazione di list users. Viene aggiornata ogni volta che si registra un nuovo utente.
-
-\item[ActivePosts] rappresenta una collezione di id dei post che hanno ricevuto attività dall'ultimo ciclo di calcolo dei reward. Permette di calcolare i reward solo per i post che lo necessitano, velocizzando l'operazione. Un post ci viene aggiunto quando riceve commenti o voti positivi, e viene rimosso alla rimozione del post. Viene svuotata alla fine di ogni ciclo di reward.
-
-\item[Rewinners] rappresenta un mapping (id \textrightarrow \space lista usernames). Permette di risalire efficientemente dall'id di un Post alla lista degli User che ne hanno effettuato il rewin.
-Questo è necessario in quanto alla rimozione di un post, bisogna eliminare i riferimenti a questo dal blog di ognuno degli utenti che ne hanno effettuato il rewin. Viene aggiornata ogni volta che un utente rewinna un post, e ogni volta che un post viene eliminato.
-
-\item[FollowNotifiers] rappresenta un mapping (username \textrightarrow \space FollowerClient). È qui che si tiene traccia dei meccanismi di callback RMI dei singoli client. Questa viene aggiornata tramite richieste di subscribe/unsubscribe del client via RMI; inoltre, quando un FollowerClient non ci risulta raggiungibile viene rimosso, in modo da non dover tenere traccia dei client di utenti che assumiamo essere inattivi.
-
-\end{description}
-
-Ogni server ha la propria istanza di ServerData, che viene inizializzata dal ServerMain e poi condivisa tra ogni suo thread. Per gestire la concorrenza viene utilizzato un ReadWriteLock, che permette ai thread di condividere il ServerData in lettura, necessitandone controllo esclusivo solo in casi di scrittura.
-Aggiornamenti ai dati del server vengono generalmente effettuati tramite metodi propri di ServerData, all interno dei quali ci assicuriamo di aggiornare in maniera appropriata le strutture dati di supporto.
-
-\subsection{Common}
-
-Le classi del package Common più interessanti sono User, Post, e Request/Response.
-
-\subsubsection{User}
-
-La classe User rappresenta le informazioni relative a un singolo utente di WinSome.
-Contiene quindi informazioni quali l'username dell'utente e la sua lista  di tag, oltre a un set contente gli id dei post presenti nel proprio blog. Conserviamo poi qui un set degli utenti che questo User segue o dai quali viene seguito. Teniamo due set separati follower/following e li aggiorniamo a ogni nuovo follow/unfollow in modo da rendere più efficienti le operazioni di list followers o list following. Gli User vengono creati all interno di ServerData alla registrazione di un nuovo utente, e possono poi essere ottenuti da questa da ogni thread del server. Per controllare la concorrenza si usa anche qui un unico ReadWriteLock.
-
-\subsubsection{Post}
-
-La classe Post rappresenta le informazioni relative a un singolo post su WinSome.
-Contiene informazioni quali il proprio autore, titolo e contenuto. Contiene inoltre informazioni più dinamiche quali una lista dei commenti effettuati sul post, e tiene traccia dei voti sul post e dei relativi autori.
-Presenta poi delle strutture dati di supporto utili al calcolo dei reward. nComments rappresenta un mapping (username \textrightarrow \space numero di commenti). Insieme a votes, però, non contiene tutte le informazioni necessarie a calcolare i reward del post, in quanto bisogna saper distinguere le interazioni con il post già conteggiate dalle altre. A questo fine il Post contiene anche un PostCheckpoint, che contiene una copia di nComments e di votes relativa all ultimo calcolo dei reward su di questo post. Con il PostCheckpoint si possono quindi trovare le interazioni non ancora conteggiate calcolando la differenza tra questo e lo stato corrente.
-Come gli User, i Post sono accessibili da tutti i thread del Server, e, per gestire la concorrenza si usa un unico ReadWriteLock.
-
-\subsubsection{Request/Response}
-
-Per le comunicazioni su TCP il sistema WinSome utilizza un sistema del tipo Richiesta/Risposta. Questo sta a significare che il Client farà richieste al server e aspetterà una risposta da questo.
-Le richieste dal Client al server prendono la forma di una classe Request serializzata. Questa è caratterizzata da un tipo enum e una lista di parametri opzionali. In risposta il Server manderà una Response serializzata, che è caratterizzata da un codice (i quali valori cercano di seguire quelli dei codici HTTP/1.1), un messaggio, ed eventuali contenuti richiesti.
-Questo modello di comunicazione tramite Request/Response serializzate è utile per semplificare il parsing delle richieste lato server, e delle risposte lato client, che consideriamo al momento più importante di un implementazione più complessa, seppur moderatamente più efficiente.
-
+Per mandare più File in un solo Message, come a seguito di una capacity miss o di una readN, esistono i FileContainer. Questi associano semplicemente a un contenuto opaco un nome. Sono però presenti metodi per serializzare e deserializzare array di FileContainer in un singolo buffer, permettendo di mandare un numero arbitrario di File in un unico Message, senza perderne il nome.
 
 \section{Migliorie Possibili}
 
@@ -248,6 +191,12 @@ Queste due migliorie permetterebbero probabilmente al server di gestire traffici
 
 Detto questo, non crediamo necessarie al momento eccessive ottimizzazioni, che ci paiono premature rispetto al numero di utenti attivi (0).
 
+\section{Codice di terze parti}
+Per l'implementazione dell HashTable utilizziamo la funzione hash Murmur3 sviluppata da Austin Appleby e hostata su github al link \url{https://github.com/aappleby/smhasher}. Questa è rilasciata nel dominio pubblico senza copyright.
+
+Utilizziamo inoltre la libreria zlib per la compressione dei File. Questa è copyright di Jean-loup Gailly e Mark Adler, che ne permettono l'utilizzo libero. Il progetto è trovabile a \url{https://www.zlib.net/}.
+
+Infine, per generare i nostri UUID, utilizziamo un frammento di codice preso da stackoverflow cortesia dell utente themoondotshine all indirizzo \url{https://stackoverflow.com/a/2182269}.
 
 \end{flushleft}
 

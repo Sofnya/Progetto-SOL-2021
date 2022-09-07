@@ -134,6 +134,7 @@ void threadpoolFastExit(ThreadPool *pool)
     threadpoolTerminate(pool);
 
     // Waits for up to 5 seconds for all threads to terminate.
+    // While this is busy waiting, and could be donem with a timed wait on a condition variable, the added complexity to the codebase isn't worth it.
     for (i = 0; i < 500; i++)
     {
         if (atomicGet(pool->alive) == 0)
