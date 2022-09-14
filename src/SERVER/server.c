@@ -23,6 +23,7 @@ int sfd;
 ThreadPool pool;
 FileSystem fs;
 List connections;
+volatile sig_atomic_t signalNumber = 0;
 pthread_mutex_t connLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct _messageArgs
@@ -44,36 +45,11 @@ void cleanup(void);
 int _receiveMessageWrapper(void *args);
 int _sendMessageWrapper(void *args);
 
-// Mostly just exits and lets the cleanup do it's job. Calls the correct ThreadPoolExit based on signum.
+// Just tells the main to terminate.
 void signalHandler(int signum)
 {
-    logger("Exiting", "STATUS");
-
-    if (signum == SIGHUP)
-    {
-        threadpoolCleanExit(&pool);
-    }
-    else if (signum == SIGQUIT || signum == SIGINT)
-    {
-        threadpoolFastExit(&pool);
-    }
-    else
-    {
-        int *cur;
-        // First we disconnect all clients. Note we aren't accepting any new connections(the main is here in the handler!).
-        pthread_mutex_lock(&connLock);
-        while (listSize(connections) > 0)
-        {
-            listPop((void **)&cur, &connections);
-            close(*cur);
-            free(cur);
-        }
-        pthread_mutex_unlock(&connLock);
-        // Then call the actual exit.
-        threadpoolFastExit(&pool);
-    }
-
-    exit(EXIT_SUCCESS);
+    signalNumber = signum;
+    return;
 }
 
 // This is called at every clean exit, as it's registered atexit(). We use it to free all resources, and print an account of the session.
@@ -99,13 +75,13 @@ int main(int argc, char *argv[])
     int fdc;
     int *curFd;
     struct sockaddr_un sa;
+    struct sigaction action;
 
-    // Register our signalHandler.
-    signal(SIGQUIT, &signalHandler);
-    signal(SIGINT, &signalHandler);
-    signal(SIGHUP, &signalHandler);
+    action.sa_handler = &signalHandler;
+    action.sa_flags = 0;
+    sigfillset(&action.sa_mask);
 
-    // And ignore SIGPIPE to avoid having problems with reads/sends.
+    // Ignore SIGPIPE to avoid having problems with reads/sends.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
 
     // Register our cleanup.
@@ -140,6 +116,11 @@ int main(int argc, char *argv[])
     strncpy(sa.sun_path, SOCK_NAME, UNIX_PATH_MAX - 1);
     sa.sun_path[UNIX_PATH_MAX - 1] = '\00';
 
+    // Register our signalHandler.
+    sigaction(SIGQUIT, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
+
     if (bind(sfd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
     {
         puts("Couldn't bind to requested address, terminating.");
@@ -155,9 +136,12 @@ int main(int argc, char *argv[])
     }
 
     // And now we start waiting for new connections, accepting them and passing them to the ThreadPool to handle.
-    while (1)
+    while (signalNumber == 0)
     {
-        ERROR_CHECK(fdc = accept(sfd, NULL, NULL));
+        if ((fdc = accept(sfd, NULL, NULL)) == -1)
+        {
+            continue;
+        }
         SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
         *curFd = fdc;
 
@@ -166,6 +150,34 @@ int main(int argc, char *argv[])
         pthread_mutex_unlock(&connLock);
         threadpoolSubmit(&handleConnection, curFd, &pool);
     }
+
+    logger("Exiting", "STATUS");
+    if (signalNumber == SIGHUP)
+    {
+        threadpoolCleanExit(&pool);
+    }
+    else if (signalNumber == SIGQUIT || signalNumber == SIGINT)
+    {
+        int *cur;
+        // First we disconnect all clients. Note we aren't accepting any new connections(the main is here in the handler!).
+        pthread_mutex_lock(&connLock);
+        while (listSize(connections) > 0)
+        {
+            listPop((void **)&cur, &connections);
+            close(*cur);
+            free(cur);
+        }
+        pthread_mutex_unlock(&connLock);
+
+        // Then call the actual exit.
+        threadpoolFastExit(&pool);
+    }
+    else
+    {
+        threadpoolFastExit(&pool);
+    }
+
+    exit(EXIT_SUCCESS);
 }
 
 // Where the magic happens.
