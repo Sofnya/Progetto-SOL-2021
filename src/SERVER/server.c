@@ -55,6 +55,8 @@ void signalHandler(int signum)
 // This is called at every clean exit, as it's registered atexit(). We use it to free all resources, and print an account of the session.
 void cleanup(void)
 {
+    int *cur;
+
     logger("Cleaning up!", "STATUS");
     close(sfd);
     unlink(SOCK_NAME);
@@ -65,6 +67,15 @@ void cleanup(void)
     prettyPrintStats(fs.fsStats);
     prettyPrintFiles(&fs);
     fsDestroy(&fs);
+
+    // Need to properly destroy the connections list.
+    pthread_mutex_lock(&connLock);
+    while (listSize(connections) > 0)
+    {
+        listPop((void **)&cur, &connections);
+        free(cur);
+    }
+    pthread_mutex_unlock(&connLock);
     listDestroy(&connections);
 
     logger("Done cleaning up, goodbye!", "STATUS");
@@ -80,6 +91,11 @@ int main(int argc, char *argv[])
     action.sa_handler = &signalHandler;
     action.sa_flags = 0;
     sigfillset(&action.sa_mask);
+
+    // Register our signalHandler.
+    sigaction(SIGQUIT, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
 
     // Ignore SIGPIPE to avoid having problems with reads/sends.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
@@ -115,11 +131,6 @@ int main(int argc, char *argv[])
     sa.sun_family = AF_UNIX;
     strncpy(sa.sun_path, SOCK_NAME, UNIX_PATH_MAX - 1);
     sa.sun_path[UNIX_PATH_MAX - 1] = '\00';
-
-    // Register our signalHandler.
-    sigaction(SIGQUIT, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
-    sigaction(SIGHUP, &action, NULL);
 
     if (bind(sfd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
     {
