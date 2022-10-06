@@ -93,3 +93,28 @@ size_t atomicDec(size_t value, AtomicInt *el)
 
     return res;
 }
+
+/**
+ * @brief Atomically compares given value with given AtomicInt, returning value - AtomicInt.
+ *
+ * @param value the value to compare to the given AtomicInt.
+ * @param el the AtomicInt to query.
+ * @return int value - given AtomicInt.
+ */
+int atomicComp(size_t value, AtomicInt *el)
+{
+    int res;
+    PTHREAD_CHECK(pthread_mutex_lock(el->_mtx));
+    res = value - el->_value;
+    if (res < 0)
+    {
+        res = -1;
+    }
+    else if (res > 0)
+    {
+        res = 1;
+    }
+    PTHREAD_CHECK(pthread_mutex_unlock(el->_mtx));
+
+    return res;
+}

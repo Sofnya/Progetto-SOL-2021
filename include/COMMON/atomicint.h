@@ -18,4 +18,6 @@ size_t atomicPut(size_t value, AtomicInt *el);
 size_t atomicInc(size_t value, AtomicInt *el);
 size_t atomicDec(size_t value, AtomicInt *el);
 
+int atomicComp(size_t value, AtomicInt *el);
+
 #endif

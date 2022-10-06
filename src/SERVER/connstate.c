@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <pthread.h>
 
 #include "SERVER/connstate.h"
 #include "SERVER/filesystem.h"
@@ -24,6 +25,12 @@ int connStateInit(FileSystem *fs, ConnState *state)
     genUUID(state->uuid);
 
     state->lockedFile = NULL;
+
+    PTHREAD_CHECK(pthread_mutex_init(&state->mtx, NULL));
+    state->shouldDestroy = 0;
+    atomicInit(&state->inUse);
+    atomicInit(&state->requestN);
+    atomicInit(&state->parsedN);
 
     // We don't need a huge hashTable for every connection. Assuming clients tend to open less than 8 files at a time seems reasonable.
     return hashTableInit(16, state->fds);
@@ -52,6 +59,10 @@ void connStateDestroy(ConnState *state)
         free(fd);
     }
 
+    pthread_mutex_destroy(&state->mtx);
+    atomicDestroy(&state->inUse);
+    atomicDestroy(&state->requestN);
+    atomicDestroy(&state->parsedN);
     hashTableDestroy(state->fds);
     free(state->fds);
 }

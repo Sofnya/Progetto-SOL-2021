@@ -2,9 +2,11 @@
 #define CONNSTATE_H
 
 #include <stdint.h>
+#include <pthread.h>
 
 #include "COMMON/fileContainer.h"
 #include "COMMON/hashtable.h"
+#include "COMMON/atomicint.h"
 #include "SERVER/filesystem.h"
 
 typedef struct _connState
@@ -13,6 +15,16 @@ typedef struct _connState
     FileSystem *fs;
     char uuid[100];
     FileDescriptor *lockedFile;
+
+    // We keep track of how many threads are using the ConnState, so that only the last thread will destroy it.
+    AtomicInt inUse;
+    int shouldDestroy;
+    // We need a mtx to regulate concurrent accesses.
+    pthread_mutex_t mtx;
+    // Counts parsed requests, to ensure that requests are processed in order for any connection.
+    AtomicInt requestN;
+    AtomicInt parsedN;
+
 } ConnState;
 
 int connStateInit(FileSystem *fs, ConnState *state);

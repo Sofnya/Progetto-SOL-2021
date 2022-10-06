@@ -32,7 +32,17 @@ struct _messageArgs
     Message *m;
 };
 
+struct _handleArgs
+{
+    int fd;
+    size_t counter;
+    Message *request;
+    ConnState *state;
+};
+
+void acceptRequests();
 void handleConnection(void *fdc);
+void handleRequest(void *args);
 Message *parseRequest(Message *request, ConnState *state);
 
 void logConnection(ConnState state);
@@ -147,6 +157,7 @@ int main(int argc, char *argv[])
     }
 
     // And now we start waiting for new connections, accepting them and passing them to the ThreadPool to handle.
+    /**
     while (signalNumber == 0)
     {
         if ((fdc = accept(sfd, NULL, NULL)) == -1)
@@ -160,7 +171,9 @@ int main(int argc, char *argv[])
         listPush((void *)curFd, &connections);
         pthread_mutex_unlock(&connLock);
         threadpoolSubmit(&handleConnection, curFd, &pool);
-    }
+    }*/
+
+    acceptRequests();
 
     logger("Exiting", "STATUS");
     if (signalNumber == SIGHUP)
@@ -189,6 +202,167 @@ int main(int argc, char *argv[])
     }
 
     exit(EXIT_SUCCESS);
+}
+
+void acceptRequests()
+{
+    int fd_sk = sfd, fd_c, fd_num = 0, fd;
+    fd_set set, rdset;
+    int nread;
+    Message *request;
+    struct _handleArgs *args;
+    HashTable connStates;
+    ConnState *cur;
+
+    // An int is at most 10^19, so 19 chars long, we set length to 30 just to be safe :/.
+    char curKey[30];
+
+    hashTableInit(1024, &connStates);
+
+    if (fd_sk > fd_num)
+    {
+        fd_num = fd_sk;
+    }
+    FD_ZERO(&set);
+    FD_SET(fd_sk, &set);
+
+    while (true)
+    {
+        rdset = set;
+        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+        {
+            puts("Errore, TODO:gestisci");
+            return;
+        }
+        else
+        {
+            puts("Something ready!!");
+            for (fd = 0; fd <= fd_num; fd++)
+            {
+                if (FD_ISSET(fd, &rdset))
+                {
+                    printf("Socket ready:%d\n", fd);
+                    if (fd == fd_sk)
+                    {
+                        fd_c = accept(fd_sk, NULL, 0);
+                        if (fd_c > fd_num)
+                        {
+                            fd_num = fd_c;
+                        }
+                        FD_SET(fd_c, &set);
+                        printf("Accepted connection:%d\n", fd_c);
+                        UNSAFE_NULL_CHECK(cur = malloc(sizeof(ConnState)));
+
+                        // We use the fd as a key, as it's guaranteed to be unique as long as the connection is alive.
+                        sprintf(curKey, "%d", fd);
+                        connStateInit(&fs, cur);
+                        hashTablePut(curKey, (void *)cur, connStates);
+
+                        logConnection(*cur);
+                    }
+                    else
+                    {
+                        request = malloc(sizeof(Message));
+                        if (receiveMessage(fd, request) != -1)
+                        {
+                            sprintf(curKey, "%d", fd);
+                            hashTableGet(curKey, (void **)&cur, connStates);
+
+                            UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
+                            args->fd = fd;
+                            args->request = request;
+                            args->state = cur;
+                            args->counter = atomicInc(1, &cur->requestN) - 1;
+
+                            atomicInc(1, &cur->inUse);
+
+                            printf("Received: %s\n", request->info);
+                            threadpoolSubmit(&handleRequest, args, &pool);
+                        }
+                        else
+                        {
+                            printf("Disconnecting %d uwu\n", fd);
+                            free(request);
+
+                            // Destroy the ConnState, and remove it from the HashTable.
+                            sprintf(curKey, "%d", fd);
+                            hashTableRemove(curKey, (void **)&cur, connStates);
+                            logDisconnect(*cur);
+
+                            cur->shouldDestroy = 1;
+                            if (atomicComp(0, &cur->inUse) == 0)
+                            {
+                                connStateDestroy(cur);
+                                free(cur);
+                            }
+
+                            FD_CLR(fd, &set);
+                            close(fd);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    hashTableDestroy(&connStates);
+}
+
+void handleRequest(void *args)
+{
+    struct _handleArgs handleArgs = *(struct _handleArgs *)args;
+    Message *request = handleArgs.request;
+    ConnState *state = handleArgs.state;
+    int fd = handleArgs.fd;
+    size_t counter = handleArgs.counter;
+    Message *response;
+
+    puts("Handling request!");
+
+    // If the connState is being destroyed, returns immediately, destroying it if we are the last to use it.
+    if (state->shouldDestroy == 1)
+    {
+        if (atomicDec(1, &state->inUse) == 0)
+        {
+            connStateDestroy(state);
+            free(state);
+        }
+        return;
+    }
+
+    if (atomicComp(counter, &state->parsedN) != 0)
+    {
+        threadpoolSubmit(&handleRequest, args, &pool);
+        puts("Request out of order");
+        return;
+    }
+
+    free(args);
+    logRequest(request, *state);
+
+    // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
+    response = parseRequest(request, state);
+    atomicInc(1, &state->parsedN);
+    logResponse(response, *state);
+
+    // And send our response.
+    sendMessage(fd, response);
+
+    messageDestroy(request);
+    messageDestroy(response);
+    free(request);
+    free(response);
+
+    if (atomicDec(1, &state->inUse) == 0)
+    {
+        if (state->shouldDestroy == 1)
+        {
+            connStateDestroy(state);
+            free(state);
+        }
+    }
+
+    return;
 }
 
 // Where the magic happens.

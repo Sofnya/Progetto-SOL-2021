@@ -46,8 +46,8 @@ void load_config(char *path)
                 line[len - 1] = '\00';
         }
 
-        // Ignoring comments
-        if (!strncmp(line, "//", 2))
+        // Ignoring comments and empty lines.
+        if (!strncmp(line, "//", 2) || len <= 1)
         {
             continue;
         }
