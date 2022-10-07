@@ -167,6 +167,11 @@ void threadpoolCancel(ThreadPool *pool)
     pthread_t *pid;
     char log[500];
 
+    if (atomicGet(pool->alive) == 0)
+    {
+        return;
+    }
+
     logger("Cancelling ThreadPool", "STATUS");
 
     VOID_PTHREAD_CHECK(pthread_mutex_lock(pool->_pidsmtx));

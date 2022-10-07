@@ -24,7 +24,6 @@ ThreadPool pool;
 FileSystem fs;
 List connections;
 volatile sig_atomic_t signalNumber = 0;
-pthread_mutex_t connLock = PTHREAD_MUTEX_INITIALIZER;
 
 struct _messageArgs
 {
@@ -41,7 +40,6 @@ struct _handleArgs
 };
 
 void acceptRequests();
-void handleConnection(void *fdc);
 void handleRequest(void *args);
 Message *parseRequest(Message *request, ConnState *state);
 
@@ -52,8 +50,8 @@ void logResponse(Message *response, ConnState state);
 
 void cleanup(void);
 
-int _receiveMessageWrapper(void *args);
-int _sendMessageWrapper(void *args);
+long _heuristic(void *el);
+char *a(void *);
 
 // Just tells the main to terminate.
 void signalHandler(int signum)
@@ -79,13 +77,11 @@ void cleanup(void)
     fsDestroy(&fs);
 
     // Need to properly destroy the connections list.
-    pthread_mutex_lock(&connLock);
     while (listSize(connections) > 0)
     {
         listPop((void **)&cur, &connections);
         free(cur);
     }
-    pthread_mutex_unlock(&connLock);
     listDestroy(&connections);
 
     logger("Done cleaning up, goodbye!", "STATUS");
@@ -93,8 +89,6 @@ void cleanup(void)
 
 int main(int argc, char *argv[])
 {
-    int fdc;
-    int *curFd;
     struct sockaddr_un sa;
     struct sigaction action;
 
@@ -156,24 +150,10 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // And now we start waiting for new connections, accepting them and passing them to the ThreadPool to handle.
-    /**
-    while (signalNumber == 0)
-    {
-        if ((fdc = accept(sfd, NULL, NULL)) == -1)
-        {
-            continue;
-        }
-        SAFE_NULL_CHECK(curFd = malloc(sizeof(int)));
-        *curFd = fdc;
-
-        pthread_mutex_lock(&connLock);
-        listPush((void *)curFd, &connections);
-        pthread_mutex_unlock(&connLock);
-        threadpoolSubmit(&handleConnection, curFd, &pool);
-    }*/
-
+    // And now we start waiting for new requests, accepting them and passing them to the ThreadPool to handle.
     acceptRequests();
+
+    // If we are here, we received a termination signal.
 
     logger("Exiting", "STATUS");
     if (signalNumber == SIGHUP)
@@ -183,21 +163,15 @@ int main(int argc, char *argv[])
     else if (signalNumber == SIGQUIT || signalNumber == SIGINT)
     {
         int *cur;
-        // First we disconnect all clients. Note we aren't accepting any new connections(the main is here in the handler!).
-        pthread_mutex_lock(&connLock);
+        // First we disconnect all clients.
         while (listSize(connections) > 0)
         {
             listPop((void **)&cur, &connections);
             close(*cur);
             free(cur);
         }
-        pthread_mutex_unlock(&connLock);
 
         // Then call the actual exit.
-        threadpoolFastExit(&pool);
-    }
-    else
-    {
         threadpoolFastExit(&pool);
     }
 
@@ -206,16 +180,20 @@ int main(int argc, char *argv[])
 
 void acceptRequests()
 {
-    int fd_sk = sfd, fd_c, fd_num = 0, fd;
+    int fd_sk = sfd, fd_c, fd_num = 0, fd, i = 0;
+    int *curFD;
     fd_set set, rdset;
-    int nread;
     Message *request;
     struct _handleArgs *args;
     HashTable connStates;
     ConnState *cur;
+    void *saveptr = NULL;
 
     // An int is at most 10^19, so 19 chars long, we set length to 30 just to be safe :/.
     char curKey[30];
+
+    sigset_t old_sigmask;
+    sigset_t new_sigmask;
 
     hashTableInit(1024, &connStates);
 
@@ -226,39 +204,47 @@ void acceptRequests()
     FD_ZERO(&set);
     FD_SET(fd_sk, &set);
 
-    while (true)
+    // We block all signals when outside of pselect, to avoid race conditions.
+    sigfillset(&new_sigmask);
+    pthread_sigmask(SIG_SETMASK, &new_sigmask, &old_sigmask);
+
+    while (signalNumber == 0)
     {
         rdset = set;
-        if (select(fd_num + 1, &rdset, NULL, NULL, NULL) == -1)
+
+        if (pselect(fd_num + 1, &rdset, NULL, NULL, NULL, &old_sigmask) == -1)
         {
-            puts("Errore, TODO:gestisci");
-            return;
+            break;
         }
         else
         {
-            puts("Something ready!!");
             for (fd = 0; fd <= fd_num; fd++)
             {
                 if (FD_ISSET(fd, &rdset))
                 {
-                    printf("Socket ready:%d\n", fd);
                     if (fd == fd_sk)
                     {
                         fd_c = accept(fd_sk, NULL, 0);
+
                         if (fd_c > fd_num)
                         {
                             fd_num = fd_c;
                         }
                         FD_SET(fd_c, &set);
-                        printf("Accepted connection:%d\n", fd_c);
                         UNSAFE_NULL_CHECK(cur = malloc(sizeof(ConnState)));
 
                         // We use the fd as a key, as it's guaranteed to be unique as long as the connection is alive.
-                        sprintf(curKey, "%d", fd);
+                        sprintf(curKey, "%d", fd_c);
                         connStateInit(&fs, cur);
+
                         hashTablePut(curKey, (void *)cur, connStates);
 
+                        UNSAFE_NULL_CHECK(curFD = malloc(sizeof(int)));
+                        *curFD = fd_c;
+                        listPush((void *)curFD, &connections);
+
                         logConnection(*cur);
+                        printf("New connection:%d\n", fd_c);
                     }
                     else
                     {
@@ -266,7 +252,12 @@ void acceptRequests()
                         if (receiveMessage(fd, request) != -1)
                         {
                             sprintf(curKey, "%d", fd);
-                            hashTableGet(curKey, (void **)&cur, connStates);
+
+                            if (hashTableGet(curKey, (void **)&cur, connStates) == -1)
+                            {
+                                puts("\n\n--------------------------ERROR: ConnState not found!!------------------\n\n");
+                                continue;
+                            }
 
                             UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
                             args->fd = fd;
@@ -276,12 +267,11 @@ void acceptRequests()
 
                             atomicInc(1, &cur->inUse);
 
-                            printf("Received: %s\n", request->info);
+                            logRequest(request, *cur);
                             threadpoolSubmit(&handleRequest, args, &pool);
                         }
                         else
                         {
-                            printf("Disconnecting %d uwu\n", fd);
                             free(request);
 
                             // Destroy the ConnState, and remove it from the HashTable.
@@ -298,13 +288,58 @@ void acceptRequests()
 
                             FD_CLR(fd, &set);
                             close(fd);
+
+                            // Keep our list of connections updated.
+                            saveptr = NULL;
+                            while (listScan((void **)&curFD, &saveptr, &connections) != -1)
+                            {
+                                if (*curFD == fd)
+                                {
+                                    listRemove(i, NULL, &connections);
+                                    printf("Found self:%d at position:%d\n", fd, i);
+                                    close(*curFD);
+                                    free(curFD);
+                                    break;
+                                }
+                                i++;
+                            }
+                            if (errno == EOF)
+                            {
+                                if (*curFD == fd)
+                                {
+                                    listRemove(i, NULL, &connections);
+                                    printf("Found self:%d at position:%d\n", fd, i);
+                                    close(*curFD);
+                                    free(curFD);
+                                }
+                            }
+
+                            listSort(&connections, &_heuristic);
+                            printf("Disconnecting %d, active connections:\n", fd);
+
+                            customPrintList(&connections, &a);
+                            if (listSize(connections) == 0)
+                            {
+                                fd_num = fd_sk;
+                            }
+                            else
+                            {
+                                listGet(0, (void **)&curFD, &connections);
+                                if (*curFD > fd_sk)
+                                {
+                                    fd_num = *curFD;
+                                }
+                                else
+                                {
+                                    fd_num = fd_sk;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
-
     hashTableDestroy(&connStates);
 }
 
@@ -316,8 +351,6 @@ void handleRequest(void *args)
     int fd = handleArgs.fd;
     size_t counter = handleArgs.counter;
     Message *response;
-
-    puts("Handling request!");
 
     // If the connState is being destroyed, returns immediately, destroying it if we are the last to use it.
     if (state->shouldDestroy == 1)
@@ -338,8 +371,6 @@ void handleRequest(void *args)
     }
 
     free(args);
-    logRequest(request, *state);
-
     // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
     response = parseRequest(request, state);
     atomicInc(1, &state->parsedN);
@@ -363,135 +394,6 @@ void handleRequest(void *args)
     }
 
     return;
-}
-
-// Where the magic happens.
-// A thread from the ThreadPool will handle a whole connection with a client.
-// This shouldn't be a problem, as the ThreadPool is dinamic, and as such we can always spawn more threads if any are needed/ some are blocked in I/O.
-// This handles the receiving a request and sending a response logic, the logic for interacting with the FileSystem is handled by parseRequest().
-void handleConnection(void *fdc)
-{
-    Message *request;
-    Message *response;
-    ConnState state;
-
-    struct timespec maxWait;
-    struct _messageArgs args;
-    maxWait.tv_nsec = 0;
-    maxWait.tv_sec = 5;
-
-    int fd = *(int *)fdc;
-    int err;
-    args.fd = fd;
-    bool done = false;
-
-    int *curEl, i = 0;
-    void *saveptr = NULL;
-
-    // Every connection has it's own ConnState.
-    connStateInit(&fs, &state);
-
-    logConnection(state);
-    while (!done)
-    {
-        if ((request = malloc(sizeof(Message))) == NULL)
-        {
-            perror("Error on malloc");
-            done = true;
-            break;
-        }
-
-        request->size = 0;
-        request->content = NULL;
-        request->info = NULL;
-        request->type = 0;
-        request->status = 0;
-
-        args.m = request;
-
-        // We always receive one request.
-        // We receive and send messages with a timeout, if none are recieved for too long(5s) we assume the client is dead and disconnect them.
-        err = timeoutCall(_receiveMessageWrapper, (void *)&args, maxWait);
-        if (err == -1 || err == ETIMEDOUT)
-        {
-            if (err != -1)
-                perror("Error on receive");
-            done = true;
-            messageDestroy(request);
-            free(request);
-            break;
-        }
-
-        done = (request->type == MT_DISCONNECT);
-
-        logRequest(request, state);
-
-        // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
-        response = parseRequest(request, &state);
-        logResponse(response, state);
-
-        args.m = response;
-
-        // And send our response, again with a 5s timeout.
-        err = timeoutCall(_sendMessageWrapper, (void *)&args, maxWait);
-        if (err == -1 || err == ETIMEDOUT)
-        {
-            if (err != -1)
-                perror("Error on send");
-            done = true;
-            messageDestroy(request);
-            free(request);
-            messageDestroy(response);
-            free(response);
-            break;
-        }
-
-        messageDestroy(request);
-        messageDestroy(response);
-        free(request);
-        free(response);
-    }
-
-    logDisconnect(state);
-
-    // Need to keep the alive connections updated.
-    pthread_mutex_lock(&connLock);
-    while (listScan((void **)&curEl, &saveptr, &connections) != -1)
-    {
-        if (*curEl == fd)
-        {
-            listRemove(i, NULL, &connections);
-            close(*curEl);
-            free(curEl);
-        }
-        i++;
-    }
-    if (errno == EOF)
-    {
-        if (*curEl == fd)
-        {
-            listRemove(i, NULL, &connections);
-            close(*curEl);
-            free(curEl);
-        }
-        i++;
-    }
-    // If we didn't find ourselves we have already been closed by the main thread.
-    pthread_mutex_unlock(&connLock);
-
-    connStateDestroy(&state);
-    return;
-}
-// We need those wrappers to use the generic timeoutCall.
-int _receiveMessageWrapper(void *args)
-{
-    struct _messageArgs tmp = *((struct _messageArgs *)args);
-    return receiveMessage(tmp.fd, tmp.m);
-}
-int _sendMessageWrapper(void *args)
-{
-    struct _messageArgs tmp = *((struct _messageArgs *)args);
-    return sendMessage(tmp.fd, tmp.m);
 }
 
 // Here we parse a request, making all necessary calls to the FileSystem and generating an appropriate response with the results.
@@ -886,8 +788,23 @@ void logResponse(Message *response, ConnState state)
     else
     {
         parsed = malloc(500 + strlen(response->info));
-        sprintf(parsed, ">%s >Size:%ld >UUID:%s ", response->info, response->size, state.uuid);
+        sprintf(parsed, ">%s >Size:%ld >UUID:%s", response->info, response->size, state.uuid);
     }
     logger(parsed, "RESPONSE");
     free(parsed);
+}
+
+// A simple heuristic to sort our connections list in descending order.
+long _heuristic(void *el)
+{
+    int *cur = (int *)el;
+    return -*cur;
+}
+
+char *a(void *el)
+{
+    char *res = malloc(30);
+    int cur = *(int *)el;
+    sprintf(res, "%d", cur);
+    return res;
 }

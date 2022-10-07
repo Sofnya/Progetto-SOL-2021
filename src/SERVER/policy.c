@@ -103,6 +103,10 @@ long lfuHeuristic(void *el)
 
     // We multiply the number of Accesses by 1000 to get a decently precise integer result.
     // TODO: A better solution would be implementing a listSort that uses a comparison function.
+    if (lifespan == 0)
+    {
+        lifespan = 1;
+    }
     return (target->numberAccesses * 1000) / (long)lifespan;
 }
 

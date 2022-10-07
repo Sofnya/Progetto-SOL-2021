@@ -160,7 +160,7 @@ int main(int argc, char *argv[])
             do
             {
                 // Open the file if it's not already our locked file.
-                if (lockedFile != NULL && !(strcmp(tmp, lockedFile)))
+                if (lockedFile == NULL || (strcmp(tmp, lockedFile)))
                 {
                     usleep(delay);
                     if (openFile(tmp, 0) == -1)

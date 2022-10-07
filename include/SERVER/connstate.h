@@ -18,10 +18,11 @@ typedef struct _connState
 
     // We keep track of how many threads are using the ConnState, so that only the last thread will destroy it.
     AtomicInt inUse;
-    int shouldDestroy;
+    volatile int shouldDestroy;
     // We need a mtx to regulate concurrent accesses.
     pthread_mutex_t mtx;
     // Counts parsed requests, to ensure that requests are processed in order for any connection.
+    // While this is not necessary for our client, that awaits a response before sending any new requests, a form of synchronization is needed to avoid concurrent accesses that could otherwise be caused by an efficient/malicious client.
     AtomicInt requestN;
     AtomicInt parsedN;
 

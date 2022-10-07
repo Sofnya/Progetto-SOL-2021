@@ -9,7 +9,7 @@ parser_objects = $(obj_dir)PARSER/parser.o
 
 objects =  $(client_objects) $(common_objects) $(server_objects) $(parser_objects)
 
-.PHONY: all server client unitTest clean stressTester apiTester test1 test2 test3 parser
+.PHONY: all server client unitTest clean stressTester apiTester test1 test2 test3 parser tar
 
 all: $(objects) server client
 
@@ -27,6 +27,10 @@ unitTest: $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/f
 parser: $(parser_objects) $(common_objects)
 	$(CC) $(CFLAGS) $(parser_objects) $(common_objects) -o out/parser.out $(LIBRARY)
 	cp src/PARSER/statistiche.sh out/
+
+tar: all
+	rm -f ../Sofia_Pisani-CorsoA.tar.gz;
+	tar -cf ../Sofia_Pisani-CorsoA.tar.gz *
 
 test1: server client
 	rm -rf out/test1;

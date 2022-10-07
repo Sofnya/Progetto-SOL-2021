@@ -890,12 +890,9 @@ char *_metadataPrinter(void *el)
     Metadata *data = (Metadata *)el;
     char *result;
 
-    if ((result = malloc(strlen(data->name) + 400)) == NULL)
-    {
-        return "ERROR";
-    }
+    UNSAFE_NULL_CHECK(result = malloc(strlen(data->name) + 400));
 
-    sprintf(result, "Name: %-30s\tSize: %-10ld\tCreation Time: %-10ld\tLast Access Time: %-10ld\tAccess Count: %ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
+    sprintf(result, "Name: %-30s \tSize: %-10ld \tCreation Time: %-10ld \tLast Access Time: %-10ld \tAccess Count: %ld", data->name, data->size, data->creationTime, data->lastAccess, data->numberAccesses);
 
     return result;
 }
