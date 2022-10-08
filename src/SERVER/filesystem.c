@@ -292,7 +292,12 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
     // Afterwards we lock the file if needed.
     if (flags & O_LOCK)
     {
-        CLEANUP_ERROR_CHECK(lockFile(newFd, fs), { fdDestroy(newFd); free(newFd); });
+        if (lockFile(newFd, fs) == -1)
+        {
+            fdDestroy(newFd);
+            free(newFd);
+            return -1;
+        }
     }
     *fd = newFd;
 
@@ -344,7 +349,12 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
 
     PTHREAD_CHECK(READLOCK);
 
-    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
+    if (hashTableGet(fd->name, (void **)&file, *fs->filesTable) == -1)
+    {
+        UNLOCK;
+        errno = EBADF;
+        return -1;
+    }
 
     if (getFileSize(file) > size)
     {
@@ -535,7 +545,12 @@ int lockFile(FileDescriptor *fd, FileSystem *fs)
 
     PTHREAD_CHECK(READLOCK);
 
-    CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), UNLOCK);
+    if (hashTableGet(fd->name, (void **)&file, *fs->filesTable) == -1)
+    {
+        UNLOCK;
+        errno = EBADF;
+        return -1;
+    }
 
     PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
     // We notify others of our presence.

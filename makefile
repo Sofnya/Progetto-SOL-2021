@@ -7,7 +7,7 @@ common_objects = $(obj_dir)COMMON/atomicint.o $(obj_dir)COMMON/fileContainer.o $
 server_objects = $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/server.o $(obj_dir)SERVER/connstate.o  $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/threadpool.o $(obj_dir)SERVER/logging.o
 parser_objects = $(obj_dir)PARSER/parser.o
 
-objects =  $(client_objects) $(common_objects) $(server_objects) $(parser_objects)
+objects =  $(client_objects) $(common_objects) $(server_objects) $(parser_objects) $(obj_dir)TESTS/unitTest.o
 
 .PHONY: all server client unitTest clean stressTester apiTester test1 test2 test3 parser tar
 
@@ -28,8 +28,7 @@ parser: $(parser_objects) $(common_objects)
 	$(CC) $(CFLAGS) $(parser_objects) $(common_objects) -o out/parser.out $(LIBRARY)
 	cp src/PARSER/statistiche.sh out/
 
-tar: all
-	rm -f ../Sofia_Pisani-CorsoA.tar.gz;
+tar: clean
 	tar -cf ../Sofia_Pisani-CorsoA.tar.gz *
 
 test1: server client
@@ -61,11 +60,12 @@ test3: server client
 	rm -f out/test3/setupTestFiles.sh out/test3/createRandomFiles.sh
 
 	cd out/test3; ./test3.sh
-
+	
 
 $(objects): $(obj_dir)%.o: src/%.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
+	rm -f ../Sofia_Pisani-CorsoA.tar.gz;
 	rm -f $(objects)
 	rm -rf out/*

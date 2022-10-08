@@ -77,9 +77,8 @@ void cleanup(void)
     fsDestroy(&fs);
 
     // Need to properly destroy the connections list.
-    while (listSize(connections) > 0)
+    while (listPop((void **)&cur, &connections) != -1)
     {
-        listPop((void **)&cur, &connections);
         free(cur);
     }
     listDestroy(&connections);
@@ -208,13 +207,13 @@ void acceptRequests()
     sigfillset(&new_sigmask);
     pthread_sigmask(SIG_SETMASK, &new_sigmask, &old_sigmask);
 
-    while (signalNumber == 0)
+    while (signalNumber == 0 || ((signalNumber == SIGHUP) && (listSize(connections) > 0)))
     {
         rdset = set;
 
         if (pselect(fd_num + 1, &rdset, NULL, NULL, NULL, &old_sigmask) == -1)
         {
-            break;
+            continue;
         }
         else
         {
@@ -224,7 +223,12 @@ void acceptRequests()
                 {
                     if (fd == fd_sk)
                     {
-                        fd_c = accept(fd_sk, NULL, 0);
+                        if (signalNumber == SIGHUP)
+                        {
+                            continue;
+                        }
+
+                        PRINT_ERROR_CHECK(fd_c = accept(fd_sk, NULL, 0));
 
                         if (fd_c > fd_num)
                         {
@@ -237,11 +241,11 @@ void acceptRequests()
                         sprintf(curKey, "%d", fd_c);
                         connStateInit(&fs, cur);
 
-                        hashTablePut(curKey, (void *)cur, connStates);
+                        PRINT_ERROR_CHECK(hashTablePut(curKey, (void *)cur, connStates));
 
                         UNSAFE_NULL_CHECK(curFD = malloc(sizeof(int)));
                         *curFD = fd_c;
-                        listPush((void *)curFD, &connections);
+                        PRINT_ERROR_CHECK(listPush((void *)curFD, &connections));
 
                         logConnection(*cur);
                         printf("New connection:%d\n", fd_c);
@@ -253,11 +257,7 @@ void acceptRequests()
                         {
                             sprintf(curKey, "%d", fd);
 
-                            if (hashTableGet(curKey, (void **)&cur, connStates) == -1)
-                            {
-                                puts("\n\n--------------------------ERROR: ConnState not found!!------------------\n\n");
-                                continue;
-                            }
+                            PRINT_ERROR_CHECK(hashTableGet(curKey, (void **)&cur, connStates));
 
                             UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
                             args->fd = fd;
@@ -268,17 +268,18 @@ void acceptRequests()
                             atomicInc(1, &cur->inUse);
 
                             logRequest(request, *cur);
-                            threadpoolSubmit(&handleRequest, args, &pool);
+                            PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, args, &pool));
                         }
                         else
                         {
                             free(request);
 
-                            // Destroy the ConnState, and remove it from the HashTable.
+                            // Remove the ConnState from the HashTable.
                             sprintf(curKey, "%d", fd);
-                            hashTableRemove(curKey, (void **)&cur, connStates);
+                            PRINT_ERROR_CHECK(hashTableRemove(curKey, (void **)&cur, connStates));
                             logDisconnect(*cur);
 
+                            // And mark it for destruction by the last thread using it.
                             cur->shouldDestroy = 1;
                             if (atomicComp(0, &cur->inUse) == 0)
                             {
@@ -291,14 +292,15 @@ void acceptRequests()
 
                             // Keep our list of connections updated.
                             saveptr = NULL;
+                            i = 0;
                             while (listScan((void **)&curFD, &saveptr, &connections) != -1)
                             {
                                 if (*curFD == fd)
                                 {
-                                    listRemove(i, NULL, &connections);
-                                    printf("Found self:%d at position:%d\n", fd, i);
-                                    close(*curFD);
+                                    PRINT_ERROR_CHECK(listRemove(i, (void **)&curFD, &connections));
+                                    printf("Found self:%d at position:%d\n", *curFD, i);
                                     free(curFD);
+                                    errno = 0;
                                     break;
                                 }
                                 i++;
@@ -307,14 +309,13 @@ void acceptRequests()
                             {
                                 if (*curFD == fd)
                                 {
-                                    listRemove(i, NULL, &connections);
-                                    printf("Found self:%d at position:%d\n", fd, i);
-                                    close(*curFD);
+                                    PRINT_ERROR_CHECK(listRemove(i, (void **)&curFD, &connections));
+                                    printf("Found self:%d at position:%d\n", *curFD, i);
                                     free(curFD);
                                 }
                             }
 
-                            listSort(&connections, &_heuristic);
+                            PRINT_ERROR_CHECK(listSort(&connections, &_heuristic));
                             printf("Disconnecting %d, active connections:\n", fd);
 
                             customPrintList(&connections, &a);
@@ -324,7 +325,7 @@ void acceptRequests()
                             }
                             else
                             {
-                                listGet(0, (void **)&curFD, &connections);
+                                PRINT_ERROR_CHECK(listGet(0, (void **)&curFD, &connections));
                                 if (*curFD > fd_sk)
                                 {
                                     fd_num = *curFD;
@@ -338,6 +339,17 @@ void acceptRequests()
                     }
                 }
             }
+        }
+    }
+
+    // Gotta properly destroy our connstates at the end.
+    while (hashTablePop(NULL, (void **)&cur, connStates) != -1)
+    {
+        cur->shouldDestroy = 1;
+        if (atomicGet(&cur->inUse) == 0)
+        {
+            connStateDestroy(cur);
+            free(cur);
         }
     }
     hashTableDestroy(&connStates);
@@ -373,11 +385,11 @@ void handleRequest(void *args)
     free(args);
     // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
     response = parseRequest(request, state);
-    atomicInc(1, &state->parsedN);
     logResponse(response, *state);
 
-    // And send our response.
+    // And send our response. No error handling as we need to terminate anyway.
     sendMessage(fd, response);
+    atomicInc(1, &state->parsedN);
 
     messageDestroy(request);
     messageDestroy(response);

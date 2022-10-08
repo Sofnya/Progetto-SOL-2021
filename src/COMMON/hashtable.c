@@ -370,7 +370,7 @@ int hashTablePut(char *key, void *value, HashTable table)
 /**
  * @brief Pops an element from given HashTable. A copy of it's key will be stored in key and it's value will be stored in value.
  *
- * @param key where the element's key will be stored.
+ * @param key where the element's key will be stored, if not NULL.
  * @param value where the element's value will be stored.
  * @param table the HashTable to modify.
  * @return int 0 on success, -1 and sets errno otherwise (if table is empty).
@@ -392,7 +392,14 @@ int hashTablePop(char **key, void **value, HashTable table)
         return -1;
     }
 
-    *key = result.key;
+    if (key != NULL)
+    {
+        *key = result.key;
+    }
+    else
+    {
+        free(result.key);
+    }
     *value = result.value;
 
     return 0;
