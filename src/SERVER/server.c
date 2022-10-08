@@ -69,7 +69,6 @@ void cleanup(void)
     close(sfd);
     unlink(SOCK_NAME);
 
-    // We can safely destroy the ThreadPool as we called a ThreadPoolExit in the signal handler beforehand, no other exits are present in the code.
     threadpoolDestroy(&pool);
 
     prettyPrintStats(fs.fsStats);
@@ -155,24 +154,18 @@ int main(int argc, char *argv[])
     // If we are here, we received a termination signal.
 
     logger("Exiting", "STATUS");
-    if (signalNumber == SIGHUP)
-    {
-        threadpoolCleanExit(&pool);
-    }
-    else if (signalNumber == SIGQUIT || signalNumber == SIGINT)
-    {
-        int *cur;
-        // First we disconnect all clients.
-        while (listSize(connections) > 0)
-        {
-            listPop((void **)&cur, &connections);
-            close(*cur);
-            free(cur);
-        }
 
-        // Then call the actual exit.
-        threadpoolFastExit(&pool);
+    int *cur;
+
+    // First we disconnect all clients.
+    while (listPop((void **)&cur, &connections) != -1)
+    {
+        close(*cur);
+        free(cur);
     }
+
+    // Then we terminate the threadpool.
+    threadpoolCleanExit(&pool);
 
     exit(EXIT_SUCCESS);
 }
@@ -203,8 +196,13 @@ void acceptRequests()
     FD_ZERO(&set);
     FD_SET(fd_sk, &set);
 
-    // We block all signals when outside of pselect, to avoid race conditions.
-    sigfillset(&new_sigmask);
+    // We block termination signals when outside of pselect, to avoid race conditions.
+    sigemptyset(&new_sigmask);
+    sigaddset(&new_sigmask, SIGHUP);
+    sigaddset(&new_sigmask, SIGINT);
+    sigaddset(&new_sigmask, SIGQUIT);
+    sigaddset(&new_sigmask, SIGPIPE);
+
     pthread_sigmask(SIG_SETMASK, &new_sigmask, &old_sigmask);
 
     while (signalNumber == 0 || ((signalNumber == SIGHUP) && (listSize(connections) > 0)))
@@ -221,6 +219,7 @@ void acceptRequests()
             {
                 if (FD_ISSET(fd, &rdset))
                 {
+                    // Accept new connections.
                     if (fd == fd_sk)
                     {
                         if (signalNumber == SIGHUP)
@@ -239,7 +238,7 @@ void acceptRequests()
 
                         // We use the fd as a key, as it's guaranteed to be unique as long as the connection is alive.
                         sprintf(curKey, "%d", fd_c);
-                        connStateInit(&fs, cur);
+                        PRINT_ERROR_CHECK(connStateInit(&fs, cur));
 
                         PRINT_ERROR_CHECK(hashTablePut(curKey, (void *)cur, connStates));
 
@@ -248,11 +247,11 @@ void acceptRequests()
                         PRINT_ERROR_CHECK(listPush((void *)curFD, &connections));
 
                         logConnection(*cur);
-                        printf("New connection:%d\n", fd_c);
                     }
                     else
                     {
                         request = malloc(sizeof(Message));
+                        // A new request is ready.
                         if (receiveMessage(fd, request) != -1)
                         {
                             sprintf(curKey, "%d", fd);
@@ -270,11 +269,12 @@ void acceptRequests()
                             logRequest(request, *cur);
                             PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, args, &pool));
                         }
+                        // Or a socket was closed, we handle the disconnection.
                         else
                         {
                             free(request);
 
-                            // Remove the ConnState from the HashTable.
+                            // Remove the corresponding ConnState from the HashTable.
                             sprintf(curKey, "%d", fd);
                             PRINT_ERROR_CHECK(hashTableRemove(curKey, (void **)&cur, connStates));
                             logDisconnect(*cur);
@@ -288,7 +288,7 @@ void acceptRequests()
                             }
 
                             FD_CLR(fd, &set);
-                            close(fd);
+                            PRINT_ERROR_CHECK(close(fd));
 
                             // Keep our list of connections updated.
                             saveptr = NULL;
@@ -298,7 +298,6 @@ void acceptRequests()
                                 if (*curFD == fd)
                                 {
                                     PRINT_ERROR_CHECK(listRemove(i, (void **)&curFD, &connections));
-                                    printf("Found self:%d at position:%d\n", *curFD, i);
                                     free(curFD);
                                     errno = 0;
                                     break;
@@ -310,15 +309,13 @@ void acceptRequests()
                                 if (*curFD == fd)
                                 {
                                     PRINT_ERROR_CHECK(listRemove(i, (void **)&curFD, &connections));
-                                    printf("Found self:%d at position:%d\n", *curFD, i);
                                     free(curFD);
                                 }
                             }
 
                             PRINT_ERROR_CHECK(listSort(&connections, &_heuristic));
-                            printf("Disconnecting %d, active connections:\n", fd);
 
-                            customPrintList(&connections, &a);
+                            // customPrintList(&connections, &a);
                             if (listSize(connections) == 0)
                             {
                                 fd_num = fd_sk;
@@ -375,6 +372,7 @@ void handleRequest(void *args)
         return;
     }
 
+    // If the request is out of order we push it back on the threadpool and execute something else.
     if (atomicComp(counter, &state->parsedN) != 0)
     {
         threadpoolSubmit(&handleRequest, args, &pool);
@@ -389,6 +387,8 @@ void handleRequest(void *args)
 
     // And send our response. No error handling as we need to terminate anyway.
     sendMessage(fd, response);
+
+    // Update our counter.
     atomicInc(1, &state->parsedN);
 
     messageDestroy(request);
