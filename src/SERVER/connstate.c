@@ -98,6 +98,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
     }
 
     // We have to try to open the file in a while since a freeSpace doesn't always free enough space in a single call.
+    errno = 0;
     while (openFile(path, flags, &fd, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
@@ -213,6 +214,7 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
     }
 
     // Have to write in a while since we need to try again on a capacity miss.
+    errno = 0;
     while (writeFile(fd, buf, size, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
@@ -228,6 +230,7 @@ int conn_writeFile(const char *path, void *buf, size_t size, FileContainer **fcs
             perror("Couldn't free space for capacity miss...");
             return -1;
         }
+        errno = 0;
     }
 
     if (capMiss)
@@ -266,6 +269,7 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
         return -1;
     }
 
+    errno = 0;
     while (appendToFile(fd, buf, size, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
@@ -280,6 +284,7 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
             perror("Couldn't free space for capacity miss...");
             return -1;
         }
+        errno = 0;
     }
 
     if (capMiss)

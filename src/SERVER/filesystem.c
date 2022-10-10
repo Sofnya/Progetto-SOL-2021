@@ -91,6 +91,8 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
     SAFE_NULL_CHECK(fs->rwLock = malloc(sizeof(pthread_rwlock_t)));
 
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
+    SAFE_NULL_CHECK(fs->lockedFiles = malloc(sizeof(HashTable)));
+    SAFE_NULL_CHECK(fs->lockedFilesMtx = malloc(sizeof(pthread_rwlock_t)));
 
     PTHREAD_CHECK(pthread_mutexattr_init(&attr));
     PTHREAD_CHECK(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
@@ -98,6 +100,7 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
     PTHREAD_CHECK(pthread_rwlockattr_init(&rwAttr));
     PTHREAD_CHECK(pthread_rwlock_init(fs->rwLock, &rwAttr));
     PTHREAD_CHECK(pthread_mutexattr_destroy(&attr));
+    PTHREAD_CHECK(pthread_rwlock_init(fs->lockedFilesMtx, NULL));
 
     SAFE_ERROR_CHECK(listInit(fs->filesList));
 
@@ -105,11 +108,13 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
     {
         // An hashTable of two times the maximum size should give excellent performance and very few collisions.
         SAFE_ERROR_CHECK(hashTableInit(maxN * 2, fs->filesTable));
+        SAFE_ERROR_CHECK(hashTableInit(maxN * 2, fs->lockedFiles));
     }
     else
     {
         // If we don't have this limit we guess a reasonable size.
         SAFE_ERROR_CHECK(hashTableInit(4096, fs->filesTable));
+        SAFE_ERROR_CHECK(hashTableInit(4096, fs->lockedFiles));
     }
 
     fs->isCompressed = isCompressed;
@@ -146,8 +151,10 @@ void fsDestroy(FileSystem *fs)
 
     listDestroy(fs->filesList);
     hashTableDestroy(fs->filesTable);
+    hashTableDestroy(fs->lockedFiles);
     pthread_mutex_destroy(fs->filesListMtx);
     pthread_rwlock_destroy(fs->rwLock);
+    pthread_rwlock_destroy(fs->lockedFilesMtx);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
 
@@ -157,6 +164,9 @@ void fsDestroy(FileSystem *fs)
     free(fs->rwLock);
     free(fs->curN);
     free(fs->curSize);
+
+    free(fs->lockedFiles);
+    free(fs->lockedFilesMtx);
 
     statsDestroy(fs->fsStats);
     free(fs->fsStats);
@@ -263,14 +273,27 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         sprintf(log, ">curN:%ld >curSize:%ld", atomicGet(fs->curN), atomicGet(fs->curSize));
         logger(log, "SIZE");
 
-        PTHREAD_CHECK(UNLOCK);
-        PTHREAD_CHECK(LISTUNLOCK);
-
         statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
         atomicInc(1, fs->fsStats->filesCreated);
 
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         fdInit(file->name, getTID(), FI_READ | FI_WRITE | FI_APPEND, newFd);
+
+        // Afterwards we lock the file if needed.
+        if (flags & O_LOCK)
+        {
+            if (fileTryLock(file) == -1)
+            {
+                UNLOCK;
+                LISTUNLOCK;
+                fdDestroy(newFd);
+                free(newFd);
+                return -1;
+            }
+            newFd->flags |= FI_LOCK;
+        }
+        PTHREAD_CHECK(UNLOCK);
+        PTHREAD_CHECK(LISTUNLOCK);
     }
     // On a normal open we just get the file from the filesTable, if it's present.
     else
@@ -287,18 +310,19 @@ int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs)
         CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
         fdInit(file->name, getTID(), FI_READ | FI_APPEND, newFd);
         PTHREAD_CHECK(UNLOCK);
-    }
 
-    // Afterwards we lock the file if needed.
-    if (flags & O_LOCK)
-    {
-        if (lockFile(newFd, fs) == -1)
+        // Afterwards we lock the file if needed.
+        if (flags & O_LOCK)
         {
-            fdDestroy(newFd);
-            free(newFd);
-            return -1;
+            if (lockFile(newFd, fs) == -1)
+            {
+                fdDestroy(newFd);
+                free(newFd);
+                return -1;
+            }
         }
     }
+
     *fd = newFd;
 
     atomicInc(1, fs->fsStats->open);
@@ -663,6 +687,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     i = 0;
 
     // Gotta remove the file from the filesList.
+    errno = 0;
     while (listScan((void **)&meta, &saveptr, fs->filesList) != -1)
     {
         if (!strcmp(meta->name, fd->name))

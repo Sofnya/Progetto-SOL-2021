@@ -10,6 +10,7 @@
 #include "COMMON/list.h"
 #include "COMMON/atomicint.h"
 #include "COMMON/fileContainer.h"
+#include "COMMON/syncqueue.h"
 
 #define O_LOCK 00000001
 #define O_CREATE 00000002
@@ -47,6 +48,10 @@ typedef struct _filesystem
     pthread_rwlock_t *rwLock;
 
     FSStats *fsStats;
+
+    pthread_rwlock_t *lockedFilesMtx;
+    HashTable *lockedFiles;
+    SyncQueue *lockHandlerQueue;
 } FileSystem;
 
 typedef struct _fileDescriptor

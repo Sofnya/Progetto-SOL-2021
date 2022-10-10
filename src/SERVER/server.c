@@ -434,6 +434,7 @@ Message *parseRequest(Message *request, ConnState *state)
         if (request->size == sizeof(int))
         {
             flags = *((int *)(request->content));
+            errno = 0;
             if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
                 // I wanted more information in the message so that we can tell which flags where used in the log.
@@ -535,6 +536,7 @@ Message *parseRequest(Message *request, ConnState *state)
         void *buf;
         size_t size;
 
+        errno = 0;
         if (conn_writeFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
             messageInit(0, NULL, "WRITE", MT_INFO, MS_OK, response);
@@ -576,6 +578,7 @@ Message *parseRequest(Message *request, ConnState *state)
         void *buf;
         size_t size;
 
+        errno = 0;
         if (conn_appendFile(request->info, request->content, request->size, &fcs, &fcsSize, state) == 0)
         {
             messageInit(0, NULL, "APPEND", MT_INFO, MS_OK, response);

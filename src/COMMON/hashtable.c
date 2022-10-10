@@ -35,6 +35,7 @@ int _rowGet(const char *key, struct _entry *el, struct _row row)
         return -1;
     }
 
+    errno = 0;
     // We just scan the list and strcmp every element's key with our given key.
     while (listScan(&curel, &saveptr, list) != -1)
     {
@@ -124,6 +125,7 @@ int _rowRemove(const char *key, struct _entry *el, struct _row row)
     }
 
     // We scan the list until we find the element's position.
+    errno = 0;
     while (listScan(&curel, &saveptr, list) != -1)
     {
         cur = curel;
@@ -451,6 +453,7 @@ void _printRow(struct _row row)
     void *saveptr = NULL;
     struct _entry *el;
 
+    errno = 0;
     while (listScan((void **)&el, &saveptr, row.row) != -1)
     {
         printf("|%s : %p|", el->key, el->value);

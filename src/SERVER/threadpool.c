@@ -350,6 +350,7 @@ void _threadCleanup(void *args)
     mine = pthread_self();
 
     // Look for ourselves in the list.
+    errno = 0;
     while (listScan((void **)&el, &saveptr, pids) == 0)
     {
         if (pthread_equal(*el, mine))
