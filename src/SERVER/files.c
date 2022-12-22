@@ -28,17 +28,7 @@ int fileInit(const char *name, int isCompressed, File *file)
     file->compressedSize = 0;
     file->isCompressed = isCompressed;
     file->content = NULL;
-
-    file->isDestroyed = 0;
-    file->isLocked = 0;
-    file->waitingThreads = 0;
-
-    SAFE_NULL_CHECK(file->mtx = malloc(sizeof(pthread_mutex_t)));
-    SAFE_NULL_CHECK(file->waitingLock = malloc(sizeof(pthread_mutex_t)));
-    SAFE_NULL_CHECK(file->wake = malloc(sizeof(pthread_cond_t)));
-    PTHREAD_CHECK(pthread_mutex_init(file->mtx, NULL));
-    PTHREAD_CHECK(pthread_mutex_init(file->waitingLock, NULL));
-    PTHREAD_CHECK(pthread_cond_init(file->wake, NULL));
+    file->lockedBy = NULL;
 
     SAFE_NULL_CHECK(file->metadata = malloc(sizeof(Metadata)));
     metadataInit(name, file->metadata);
@@ -54,34 +44,13 @@ int fileInit(const char *name, int isCompressed, File *file)
  */
 int fileDestroy(File *file)
 {
-    // We have to do this to avoid destroying the File someone is waiting for a lock on.
-
-    // First enter the waitingLock critical zone.
-    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
-    // Tell all threads the File is getting destroyed.
-    file->isDestroyed = 1;
-
-    // And wake them up, they will terminate unsuccesfully.
-    while (file->waitingThreads > 0)
-    {
-        PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
-        PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
-    }
-    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
-
-    // Now we are guaranteed to be the only thread with the File, as this File is no longer accessible from the FileSystem.
-    // As such we can finally destroy it safely.
-
     free((void *)file->name);
     free(file->content);
 
-    PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
-    PTHREAD_CHECK(pthread_mutex_destroy(file->mtx));
-    PTHREAD_CHECK(pthread_mutex_destroy(file->waitingLock));
-    PTHREAD_CHECK(pthread_cond_destroy(file->wake));
-    free(file->mtx);
-    free(file->waitingLock);
-    free(file->wake);
+    if (file->lockedBy != NULL)
+    {
+        free(file->lockedBy);
+    }
 
     metadataDestroy(file->metadata);
     free(file->metadata);
@@ -264,71 +233,53 @@ int fileRead(void *buf, size_t bufsize, File *file)
 }
 
 /**
- * @brief Trys to lock given File, without blocking.
+ * @brief Checks whether the given File is locked by given UUID.
  *
- * @param file the File to lock.
- * @return int 0 if succesfull, -1 and sets errno if File is already locked.
+ * @param file the File to query.
+ * @param uuid the UUID to query the File with.
+ * @return int 0 if given File is locked by given UUID, -1 otherwise.
  */
-int fileTryLock(File *file)
+int fileIsLockedBy(File *file, char *uuid)
 {
-    int res;
     metadataAccess(file->metadata);
 
-    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
-
-    res = pthread_mutex_trylock(file->mtx);
-    if (res == 0)
+    if (uuid == NULL || file->lockedBy == NULL)
     {
-        file->isLocked = 1;
-    }
-
-    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
-    if (res != 0)
-    {
-        errno = res;
         return -1;
     }
-    return 0;
+
+    return strcmp(uuid, file->lockedBy) == 0;
 }
 
 /**
- * @brief Locks given File.
+ * @brief Checks whether the given File is locked.
+ *
+ * @param file the File to query.
+ * @return int 0 if given File is locked, -1 otherwise.
+ */
+int fileIsLocked(File *file)
+{
+    return file->lockedBy != NULL;
+}
+
+/**
+ * @brief Locks given File with given uuid.
  *
  * @param file the File to lock.
+ * @param uuid the UUID of the connection which will hold the lock.
  * @return int 0 on success, -1 and sets ERRNO on failure.
  */
-int fileLock(File *file)
+int fileLock(File *file, char *uuid)
 {
     metadataAccess(file->metadata);
 
-    // We need to be careful that the File we are waiting to lock has not been destroyed in the meantime.
-    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
-
-    // While the File remains locked, and not destroyed, we wait for something to change.
-    while (!file->isDestroyed && file->isLocked)
+    if (file->lockedBy != NULL || uuid == NULL)
     {
-        PTHREAD_CHECK(pthread_cond_wait(file->wake, file->waitingLock));
-    }
-    // If the File has been scheduled to be destroyed, we terminate unsuccesfully.
-    if (file->isDestroyed)
-    {
-        file->waitingThreads--;
-
-        // And wake all other threads for safety.
-        PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
-        PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
-
-        errno = ECANCELED;
+        errno = EINVAL;
         return -1;
     }
-
-    // Otherwise just lock the File lol.
-    PTHREAD_CHECK(pthread_mutex_lock(file->mtx));
-    file->isLocked = 1;
-    file->waitingThreads--;
-
-    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
-
+    SAFE_NULL_CHECK(file->lockedBy = malloc(strlen(uuid) + 1));
+    strcpy(file->lockedBy, uuid);
     return 0;
 }
 
@@ -341,15 +292,13 @@ int fileLock(File *file)
 int fileUnlock(File *file)
 {
     metadataAccess(file->metadata);
-
-    PTHREAD_CHECK(pthread_mutex_lock(file->waitingLock));
-
-    // Remember to notify all threads waiting for a lock.
-    PTHREAD_CHECK(pthread_cond_broadcast(file->wake));
-    PTHREAD_CHECK(pthread_mutex_unlock(file->mtx));
-
-    file->isLocked = 0;
-    PTHREAD_CHECK(pthread_mutex_unlock(file->waitingLock));
+    if (file->lockedBy == NULL)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    free(file->lockedBy);
+    file->lockedBy = NULL;
     return 0;
 }
 

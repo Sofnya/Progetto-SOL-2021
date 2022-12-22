@@ -99,7 +99,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
 
     // We have to try to open the file in a while since a freeSpace doesn't always free enough space in a single call.
     errno = 0;
-    while (openFile(path, flags, &fd, state->fs) == -1)
+    while (openFile(path, flags, &fd, state->fs, state->uuid) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -306,7 +306,7 @@ int conn_appendFile(const char *path, void *buf, size_t size, FileContainer **fc
  */
 int conn_readNFiles(int N, FileContainer **fcs, ConnState *state)
 {
-    return readNFiles(N, fcs, state->fs);
+    return readNFiles(N, fcs, state->uuid, state->fs);
 }
 
 /**

@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <signal.h>
 
+#include "SERVER/server.h"
 #include "COMMON/macros.h"
 #include "SERVER/threadpool.h"
 #include "COMMON/message.h"

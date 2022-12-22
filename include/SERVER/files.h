@@ -22,13 +22,8 @@ typedef struct _file
     size_t size;
     size_t compressedSize;
     volatile int isCompressed;
-    pthread_mutex_t *mtx;
+    char *lockedBy;
 
-    volatile int isDestroyed;
-    volatile int isLocked;
-    volatile int waitingThreads;
-    pthread_mutex_t *waitingLock;
-    pthread_cond_t *wake;
     Metadata *metadata;
 } File;
 
@@ -46,8 +41,9 @@ int fileAppend(const void *content, size_t size, File *file);
 
 int fileRead(void *buf, size_t bufsize, File *file);
 
-int fileTryLock(File *file);
-int fileLock(File *file);
+int fileIsLockedBy(File *file, char *uuid);
+int fileIsLocked(File *file);
+int fileLock(File *file, char *uuid);
 int fileUnlock(File *file);
 
 int fileCompress(File *file);

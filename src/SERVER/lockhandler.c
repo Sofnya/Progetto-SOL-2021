@@ -3,6 +3,9 @@
 #include "SERVER/filesystem.h"
 #include "COMMON/hashtable.h"
 #include "COMMON/list.h"
+#include "SERVER/globals.h"
+#include "SERVER/server.h"
+#include "SERVER/threadpool.h"
 
 void lockHandler(void *args)
 {
@@ -10,21 +13,18 @@ void lockHandler(void *args)
 
     FileSystem *fs = hargs->fs;
     SyncQueue *queue = hargs->msgQueue;
+    ThreadPool *tp = hargs->tp;
     volatile int *terminate = hargs->terminate;
     free(hargs);
 
-    HashTable lockedFiles;
-
     HashTable waitingLocks;
     List *waitingList;
-
-    hashTableInit(1024, &lockedFiles);
 
     HandlerRequest *request;
 
     while (!terminate)
     {
-        request = syncqueuePop(queue);
+        request = (HandlerRequest *)syncqueuePop(queue);
         if (request == NULL)
         {
             continue;
@@ -34,9 +34,10 @@ void lockHandler(void *args)
         {
         case (R_LOCK):
         {
-            if (hashTableGet(request->name, NULL, lockedFiles) == -1)
+            if (isLockedFile(request->name, fs) == -1)
             {
-                if (hashTableGet)
+                lockFile(request->name, request->uuid, fs);
+                PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, request->args, tp));
             }
             else
             {
@@ -46,14 +47,31 @@ void lockHandler(void *args)
         case (R_UNLOCK):
         case (R_REMOVE):
         {
-            hashTableRemove(request->name, NULL, lockedFiles);
             break;
         }
         case (R_OPENLOCK):
         {
-            hashTablePut(request->name, NULL, lockedFiles);
             break;
         }
         }
     }
 }
+
+/**
+ * @brief Sens a Lock request to the LockHandler, for File with given name, from connection of given UUID.
+ *
+ * @param name the name of the File to Lock.
+ * @param uuid the UUID of the requesting connection.
+ * @param msgQueue the SyncQueue shared with the LockHandler thread.
+ */
+int lockHandlerLock(char *name, char *uuid, SyncQueue *msgQueue)
+{
+    HandlerRequest request;
+    request.type = R_LOCK;
+    request.name = name;
+    request.uuid = uuid;
+}
+
+int lockHandlerUnlock(char *name, char *uuid, SyncQueue *msgQueue);
+int lockHandlerRemove(char *name, SyncQueue *msgQueue);
+int lockHandlerOpenLock(char *name, char *uuid, SyncQueue *msgQueue);

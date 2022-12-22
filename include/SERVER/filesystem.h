@@ -19,6 +19,7 @@
 #define FI_WRITE 00000002
 #define FI_APPEND 00000004
 #define FI_LOCK 00000010
+#define FI_CREATED 00000020
 
 typedef struct _stats
 {
@@ -49,8 +50,6 @@ typedef struct _filesystem
 
     FSStats *fsStats;
 
-    pthread_rwlock_t *lockedFilesMtx;
-    HashTable *lockedFiles;
     SyncQueue *lockHandlerQueue;
 } FileSystem;
 
@@ -59,12 +58,13 @@ typedef struct _fileDescriptor
     char *name;
     pid_t pid;
     int flags;
+    char *uuid;
 } FileDescriptor;
 
 int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs);
 void fsDestroy(FileSystem *fs);
 
-int fdInit(const char *name, pid_t pid, int flags, FileDescriptor *fd);
+int fdInit(const char *name, pid_t pid, int flags, char *uuid, FileDescriptor *fd);
 void fdDestroy(FileDescriptor *fd);
 
 int statsInit(FSStats *stats);
@@ -72,18 +72,20 @@ void statsDestroy(FSStats *stats);
 
 int statsUpdateSize(FSStats *stats, size_t curSize, size_t curN);
 
-int openFile(char *pathname, int flags, FileDescriptor **fd, FileSystem *fs);
+int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSystem *fs);
 int closeFile(FileDescriptor *fd, FileSystem *fs);
 
 int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs);
 int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs);
 
-int readNFiles(int N, FileContainer **buf, FileSystem *fs);
+int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs);
 
-int lockFile(FileDescriptor *fd, FileSystem *fs);
-int unlockFile(FileDescriptor *fd, FileSystem *fs);
-int tryLockFile(FileDescriptor *fd, FileSystem *fs);
+int lockFile(char *name, char *uuid, FileSystem *fs);
+int unlockFile(char *name, FileSystem *fs);
+
+int isLockedFile(char *name, FileSystem *fs);
+int isLockedByFile(char *name, char *uuid, FileSystem *fs);
 
 int removeFile(FileDescriptor *fd, FileSystem *fs);
 
