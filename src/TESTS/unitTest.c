@@ -316,12 +316,11 @@ int filesystemTest()
 
     ERROR_CHECK(fsInit(100, 2048, 1, fs));
 
-    ERROR_CHECK(openFile("file1", O_CREATE, &fd, fs));
-    ERROR_CHECK(lockFile(fd, fs));
-    ERROR_CHECK(writeFile(fd, (void *)contents, 5, fs));
+    ERROR_CHECK(openFile("file1", O_CREATE | O_LOCK, "ADMIN", &fd, fs));
+    ERROR_CHECK(writeFile(fd, (void *)"abcde", 5, fs));
     ERROR_CHECK(appendToFile(fd, (void *)contents, 5, fs));
-
-    ERROR_CHECK(unlockFile(fd, fs));
+    ERROR_CHECK(unlockFile(fd->name, fs));
+    ERROR_CHECK(lockFile(fd->name, fd->uuid, fs));
     UNSAFE_NULL_CHECK(tmp = malloc(11));
     tmp[10] = '\00';
 
@@ -347,7 +346,7 @@ int filesTest()
 
     content = alphabet;
 
-    ERROR_CHECK(fileLock(file1));
+    ERROR_CHECK(fileLock(file1, "ADMIN1"));
     ERROR_CHECK(fileWrite(content, 5, file1));
     ERROR_CHECK(fileUnlock(file1));
     ERROR_CHECK(fileAppend(content, 5, file1));
@@ -366,7 +365,7 @@ int filesTest()
     assert(!strcmp("abcdeabcde", tmp));
 
     free(tmp);
-    fileLock(file1);
+    fileLock(file1, "ADMIN2");
     fileDestroy(file1);
     free(file1);
 

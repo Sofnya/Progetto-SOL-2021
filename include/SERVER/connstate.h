@@ -42,7 +42,4 @@ int conn_readNFiles(int N, FileContainer **fcs, ConnState *state);
 
 int conn_removeFile(const char *path, ConnState *state);
 
-int conn_lockFile(const char *path, ConnState *state);
-int conn_unlockFile(const char *path, ConnState *state);
-
 #endif

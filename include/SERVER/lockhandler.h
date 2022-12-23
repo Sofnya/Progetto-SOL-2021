@@ -9,13 +9,14 @@
 #define R_UNLOCK 1
 #define R_REMOVE 2
 #define R_OPENLOCK 3
+#define R_UNLOCK_NOTIFY 4
 
 typedef struct _handlerRequest
 {
     int type;
     char *name;
     char *uuid;
-    void *args;
+    struct _handleArgs *args;
 } HandlerRequest;
 
 struct _handlerArgs
@@ -27,9 +28,7 @@ struct _handlerArgs
 };
 
 void lockHandler(void *args);
-int lockHandlerLock(char *name, char *uuid, SyncQueue *msgQueue);
-int lockHandlerUnlock(char *name, char *uuid, SyncQueue *msgQueue);
-int lockHandlerRemove(char *name, SyncQueue *msgQueue);
-int lockHandlerOpenLock(char *name, char *uuid, SyncQueue *msgQueue);
 
+int handlerRequestInit(int type, char *name, char *uuid, struct _handleArgs *args, HandlerRequest *request);
+void handlerRequestDestroy(HandlerRequest *request);
 #endif

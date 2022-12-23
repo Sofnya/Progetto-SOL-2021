@@ -16,6 +16,7 @@
 #include "SERVER/globals.h"
 #include "SERVER/connstate.h"
 #include "SERVER/logging.h"
+#include "SERVER/lockhandler.h"
 
 #define UNIX_PATH_MAX 108
 #define N 100
@@ -32,16 +33,7 @@ struct _messageArgs
     Message *m;
 };
 
-struct _handleArgs
-{
-    int fd;
-    size_t counter;
-    Message *request;
-    ConnState *state;
-};
-
 void acceptRequests();
-void handleRequest(void *args);
 Message *parseRequest(Message *request, ConnState *state);
 
 void logConnection(ConnState state);
@@ -91,6 +83,10 @@ int main(int argc, char *argv[])
     struct sockaddr_un sa;
     struct sigaction action;
 
+    pthread_t lockHandlerPid;
+    struct _handlerArgs *hargs;
+    volatile int lockHandlerTerminate = 0;
+
     action.sa_handler = &signalHandler;
     action.sa_flags = 0;
     sigfillset(&action.sa_mask);
@@ -128,6 +124,14 @@ int main(int argc, char *argv[])
     // We initialize our ThreadPool.
     threadpoolInit(CORE_POOL_SIZE, MAX_POOL_SIZE, &pool);
 
+    // Start the LockHandler.
+    UNSAFE_NULL_CHECK(hargs = malloc(sizeof(struct _handlerArgs)));
+    hargs->fs = &fs;
+    hargs->tp = &pool;
+    hargs->msgQueue = fs.lockHandlerQueue;
+    hargs->terminate = &lockHandlerTerminate;
+    pthread_create(&lockHandlerPid, NULL, &lockHandler, (void *)hargs);
+
     // And open our socket.
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
 
@@ -139,6 +143,7 @@ int main(int argc, char *argv[])
     {
         puts("Couldn't bind to requested address, terminating.");
         threadpoolFastExit(&pool);
+        pthread_cancel(lockHandlerPid);
         exit(EXIT_FAILURE);
     }
 
@@ -146,6 +151,7 @@ int main(int argc, char *argv[])
     {
         puts("Couldn't listen on requested address, terminating.");
         threadpoolFastExit(&pool);
+        pthread_cancel(lockHandlerPid);
         exit(EXIT_FAILURE);
     }
 
@@ -168,6 +174,10 @@ int main(int argc, char *argv[])
     // Then we terminate the threadpool.
     threadpoolCleanExit(&pool);
 
+    // Then the LockHandler.
+    lockHandlerTerminate = 1;
+    syncqueueClose(fs.lockHandlerQueue);
+
     exit(EXIT_SUCCESS);
 }
 
@@ -178,6 +188,7 @@ void acceptRequests()
     fd_set set, rdset;
     Message *request;
     struct _handleArgs *args;
+    HandlerRequest *handlerRequest;
     HashTable connStates;
     ConnState *cur;
     void *saveptr = NULL;
@@ -268,7 +279,28 @@ void acceptRequests()
                             atomicInc(1, &cur->inUse);
 
                             logRequest(request, *cur);
-                            PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, args, &pool));
+                            if ((request->type == MT_FOPEN) && ((*(int *)request->content) & O_LOCK) && !((*(int *)request->content) & O_CREATE))
+                            {
+                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+                                handlerRequestInit(R_OPENLOCK, request->info, cur->uuid, args, handlerRequest);
+                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+                            }
+                            else if (request->type == MT_FLOCK)
+                            {
+                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+                                handlerRequestInit(R_LOCK, request->info, cur->uuid, args, handlerRequest);
+                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+                            }
+                            else if (request->type == MT_FUNLOCK)
+                            {
+                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+                                handlerRequestInit(R_UNLOCK, request->info, cur->uuid, args, handlerRequest);
+                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+                            }
+                            else
+                            {
+                                PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, args, &pool));
+                            }
                         }
                         // Or a socket was closed, we handle the disconnection.
                         else
@@ -436,7 +468,11 @@ Message *parseRequest(Message *request, ConnState *state)
         {
             flags = *((int *)(request->content));
             errno = 0;
-            if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
+            if ((flags & O_LOCK) && !(flags & O_CREATE) && (request->status == MS_ERR))
+            {
+                messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+            }
+            else if (conn_openFile(request->info, flags, &fcs, &fcsSize, state) == 0)
             {
                 // I wanted more information in the message so that we can tell which flags where used in the log.
                 if ((flags & O_CREATE) && (flags & O_LOCK))
@@ -634,7 +670,7 @@ Message *parseRequest(Message *request, ConnState *state)
 
     case (MT_FLOCK):
     {
-        if (conn_lockFile(request->info, state) == 0)
+        if (request->status == MS_OK)
         {
             messageInit(0, NULL, "LOCKED", MT_INFO, MS_OK, response);
         }
@@ -647,7 +683,7 @@ Message *parseRequest(Message *request, ConnState *state)
 
     case (MT_FUNLOCK):
     {
-        if (conn_unlockFile(request->info, state) == 0)
+        if (request->status == MS_OK)
         {
             messageInit(0, NULL, "UNLOCKED", MT_INFO, MS_OK, response);
         }

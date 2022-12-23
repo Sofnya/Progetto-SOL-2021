@@ -9,6 +9,7 @@
 #include "COMMON/helpers.h"
 #include "SERVER/policy.h"
 #include "SERVER/logging.h"
+#include "SERVER/lockhandler.h"
 
 #define READLOCK readLock(fs->rwLock, __LINE__, __func__)
 #define WRITELOCK writeLock(fs->rwLock, __LINE__, __func__)
@@ -91,6 +92,7 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
     SAFE_NULL_CHECK(fs->rwLock = malloc(sizeof(pthread_rwlock_t)));
 
     SAFE_NULL_CHECK(fs->filesTable = malloc(sizeof(HashTable)));
+    SAFE_NULL_CHECK(fs->lockHandlerQueue = malloc(sizeof(SyncQueue)));
 
     PTHREAD_CHECK(pthread_mutexattr_init(&attr));
     PTHREAD_CHECK(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE));
@@ -100,6 +102,7 @@ int fsInit(size_t maxN, size_t maxSize, int isCompressed, FileSystem *fs)
     PTHREAD_CHECK(pthread_mutexattr_destroy(&attr));
 
     SAFE_ERROR_CHECK(listInit(fs->filesList));
+    syncqueueInit(fs->lockHandlerQueue);
 
     if (maxN > 0)
     {
@@ -149,7 +152,9 @@ void fsDestroy(FileSystem *fs)
     pthread_rwlock_destroy(fs->rwLock);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
+    syncqueueDestroy(fs->lockHandlerQueue);
 
+    free(fs->lockHandlerQueue);
     free(fs->filesList);
     free(fs->filesTable);
     free(fs->filesListMtx);
@@ -270,13 +275,15 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
         statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
         atomicInc(1, fs->fsStats->filesCreated);
 
+        puts("Created file!");
+
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
-        fdInit(file->name, getTID(), FI_READ | FI_WRITE | FI_APPEND, uuid, newFd);
+        fdInit(file->name, getTID(), FI_READ | FI_WRITE | FI_APPEND | FI_CREATED, uuid, newFd);
 
         // Afterwards we lock the file if needed.
         if (flags & O_LOCK)
         {
-            if (fileTryLock(file) == -1)
+            if (fileLock(file, uuid) == -1)
             {
                 UNLOCK;
                 LISTUNLOCK;
@@ -286,14 +293,13 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
             }
             newFd->flags |= FI_LOCK;
         }
-        // Set the FI_CREATED flag, which allows one write, after which it's automatically unset.
-        newFd->flags |= FI_CREATED;
         PTHREAD_CHECK(UNLOCK);
         PTHREAD_CHECK(LISTUNLOCK);
     }
     // On a normal open we just get the file from the filesTable, if it's present.
     else
     {
+        puts("Opening a file normally!");
         PTHREAD_CHECK(READLOCK);
 
         if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
@@ -302,9 +308,12 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
             errno = EINVAL;
             return -1;
         }
-
         CLEANUP_CHECK(newFd = malloc(sizeof(FileDescriptor)), NULL, UNLOCK);
         fdInit(file->name, getTID(), FI_READ | FI_APPEND, uuid, newFd);
+        if (flags & O_LOCK)
+        {
+            newFd->flags |= FI_LOCK;
+        }
         PTHREAD_CHECK(UNLOCK);
     }
 
@@ -323,9 +332,14 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
  */
 int closeFile(FileDescriptor *fd, FileSystem *fs)
 {
+    HandlerRequest *request;
     if (fd->flags & FI_LOCK)
     {
-        unlockFile(fd, fs);
+        unlockFile(fd->name, fs);
+
+        UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
+        handlerRequestInit(R_UNLOCK_NOTIFY, fd->name, fd->uuid, NULL, request);
+        syncqueuePush((void *)request, fs->lockHandlerQueue);
     }
 
     fdDestroy(fd);
@@ -350,6 +364,9 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
     File *file;
     int success, tmpErr;
 
+    // Always unset the created flag on any operation with an fd.
+    fd->flags &= ~FI_CREATED;
+
     if (!(fd->flags & FI_READ))
     {
         errno = EINVAL;
@@ -365,9 +382,9 @@ int readFile(FileDescriptor *fd, void **buf, size_t size, FileSystem *fs)
         return -1;
     }
 
-    if (fileIsLocked(file))
+    if (fileIsLocked(file) == 0)
     {
-        if (!fileIsLockedBy(file, fd->uuid))
+        if (fileIsLockedBy(file, fd->uuid) == -1)
         {
             PTHREAD_CHECK(UNLOCK);
             errno = EINVAL;
@@ -422,8 +439,9 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     PTHREAD_CHECK(WRITELOCK);
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
-    if (!fileIsLockedBy(file, fd->uuid))
+    if (fileIsLockedBy(file, fd->uuid) == -1)
     {
+        puts("Nope sorry");
         PTHREAD_CHECK(UNLOCK);
         errno = EINVAL;
         return -1;
@@ -443,7 +461,7 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
 
     // Automatically unsets the FI_CREATED flag, preventing further writes.
-    fd->flags = fd->flags &= !FI_CREATED;
+    fd->flags &= ~FI_CREATED;
 
     return 0;
 }
@@ -463,8 +481,12 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     size_t oldSize, newSize;
     char log[500];
 
+    // Always unset the created flag on any operation with an fd.
+    fd->flags &= ~FI_CREATED;
+
     if (!(fd->flags & FI_APPEND))
     {
+        puts("Not allowed ...");
         errno = EINVAL;
         return -1;
     }
@@ -477,9 +499,9 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     PTHREAD_CHECK(WRITELOCK);
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
 
-    if (fileIsLocked(file))
+    if (fileIsLocked(file) == 0)
     {
-        if (!fileIsLockedBy(file, fd->uuid))
+        if (fileIsLockedBy(file, fd->uuid) == -1)
         {
             PTHREAD_CHECK(UNLOCK);
             errno = EINVAL;
@@ -499,9 +521,6 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     atomicInc(1, fs->fsStats->append);
     statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
-
-    // Automatically unsets the FI_CREATED flag, preventing further writes.
-    fd->flags = fd->flags &= !FI_CREATED;
 
     return 0;
 }
@@ -531,7 +550,7 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
         amount = N;
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * amount));
 
-    while (i < amount)
+    while (i < amount && i < atomicGet(fs->curN))
     {
         // We get the files from the filesList.
         CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(*buf); });
@@ -539,7 +558,7 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
         curSize = getSize(cur->name, fs);
         CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, { LISTUNLOCK; });
 
-        if (openFile(cur->name, 0, &curFD, fs, uuid) == -1)
+        if (openFile(cur->name, 0, uuid, &curFD, fs) == -1)
         {
             free(curBuffer);
             continue;
@@ -565,7 +584,7 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
     PTHREAD_CHECK(LISTUNLOCK);
 
     atomicInc(1, fs->fsStats->readN);
-    return amount;
+    return i;
 }
 
 /**
@@ -632,7 +651,7 @@ int isLockedFile(char *name, FileSystem *fs)
     File *file;
 
     PTHREAD_CHECK(READLOCK);
-    if (hashTableGet(name, &file, *fs->filesTable) == -1)
+    if (hashTableGet(name, (void **)&file, *fs->filesTable) == -1)
     {
         UNLOCK;
         errno = EBADF;
@@ -656,7 +675,7 @@ int isLockedByFile(char *name, char *uuid, FileSystem *fs)
     File *file;
 
     PTHREAD_CHECK(READLOCK);
-    if (hashTableGet(name, &file, *fs->filesTable) == -1)
+    if (hashTableGet(name, (void **)&file, *fs->filesTable) == -1)
     {
         UNLOCK;
         errno = EBADF;
@@ -680,6 +699,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     void *saveptr = NULL;
     Metadata *meta;
     int i;
+    HandlerRequest *request;
 
     // Check if the file is locked.
     if (!(fd->flags & FI_LOCK))
@@ -737,6 +757,10 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     atomicInc(1, fs->fsStats->remove);
     // We count a remove as an unlock to get an even number of locks/unlocks. Otherwise when one locks a file and then removes it the unlock is lost.
     atomicInc(1, fs->fsStats->unlock);
+
+    UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
+    handlerRequestInit(R_REMOVE, fd->name, "UNUSED", NULL, request);
+    syncqueuePush((void *)request, fs->lockHandlerQueue);
 
     return 0;
 }

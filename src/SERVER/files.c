@@ -184,7 +184,14 @@ int fileAppend(const void *content, size_t size, File *file)
     // To be able to work on it we first need to decompress it.
     if (file->isCompressed)
     {
-        SAFE_ERROR_CHECK(fileDecompress(file));
+        if (file->content != NULL)
+        {
+            SAFE_ERROR_CHECK(fileDecompress(file));
+        }
+        else
+        {
+            file->isCompressed = !file->isCompressed;
+        }
     }
 
     UNSAFE_NULL_CHECK(file->content = realloc(file->content, size + file->size));
@@ -245,10 +252,20 @@ int fileIsLockedBy(File *file, char *uuid)
 
     if (uuid == NULL || file->lockedBy == NULL)
     {
+        puts("Not locked by u");
         return -1;
     }
 
-    return strcmp(uuid, file->lockedBy) == 0;
+    if (strcmp(uuid, file->lockedBy) == 0)
+    {
+        puts("Yeah locked by u");
+        return 0;
+    }
+    else
+    {
+        puts("Not locked by u");
+        return -1;
+    }
 }
 
 /**
@@ -259,7 +276,13 @@ int fileIsLockedBy(File *file, char *uuid)
  */
 int fileIsLocked(File *file)
 {
-    return file->lockedBy != NULL;
+    if (file->lockedBy != NULL)
+    {
+        puts("Locked!");
+        return 0;
+    }
+    puts("Not locked!");
+    return -1;
 }
 
 /**

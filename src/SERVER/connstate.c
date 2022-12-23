@@ -50,7 +50,7 @@ void connStateDestroy(ConnState *state)
         // Gotta make sure we unlock any files that were locked.
         if (fd->flags & FI_LOCK)
         {
-            unlockFile(fd, state->fs);
+            unlockFile(fd->name, state->fs);
         }
 
         fdDestroy(fd);
@@ -85,7 +85,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
     {
         if (state->lockedFile != NULL)
         {
-            unlockFile(state->lockedFile, state->fs);
+            unlockFile(state->lockedFile->name, state->fs);
             state->lockedFile = NULL;
         }
     }
@@ -99,7 +99,7 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
 
     // We have to try to open the file in a while since a freeSpace doesn't always free enough space in a single call.
     errno = 0;
-    while (openFile(path, flags, &fd, state->fs, state->uuid) == -1)
+    while (openFile(path, flags, state->uuid, &fd, state->fs) == -1)
     {
         if (errno != EOVERFLOW)
         {
@@ -344,64 +344,4 @@ int conn_removeFile(const char *path, ConnState *state)
     free(fd);
 
     return 0;
-}
-
-/**
- * @brief Lock open File of name path.
- *
- * @param path the name of the File to lock.
- * @param state the ConnState in which we wish to lock the File.
- * @return int 0 on success, -1 and sets errno on failure.
- */
-int conn_lockFile(const char *path, ConnState *state)
-{
-    FileDescriptor *fd;
-
-    // If we are locking a new File, automatically unlock the previously locked File according to the one-file policy.
-    if (state->lockedFile != NULL)
-    {
-        if (unlockFile(state->lockedFile, state->fs) != 0)
-        {
-            errno = EINVAL;
-            return -1;
-        }
-        state->lockedFile = NULL;
-    }
-
-    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-
-    // And update our lockedFile to the newly locked File.
-    state->lockedFile = fd;
-
-    return lockFile(fd, state->fs);
-}
-
-/**
- * @brief Unlock open File of name path.
- *
- * @param path the name of the File to unlock.
- * @param state the ConnState in which we wish to unlock the File.
- * @return int 0 on success, -1 and sets errno on failure.
- */
-int conn_unlockFile(const char *path, ConnState *state)
-{
-    FileDescriptor *fd;
-    int tmp;
-
-    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if ((tmp = unlockFile(fd, state->fs)) == 0)
-    {
-        // Remember to update our lockedFile.
-        state->lockedFile = NULL;
-    }
-    return tmp;
 }
