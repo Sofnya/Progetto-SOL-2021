@@ -275,8 +275,6 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
         statsUpdateSize(fs->fsStats, atomicGet(fs->curSize), atomicGet(fs->curN));
         atomicInc(1, fs->fsStats->filesCreated);
 
-        puts("Created file!");
-
         SAFE_NULL_CHECK(newFd = malloc(sizeof(FileDescriptor)));
         fdInit(file->name, getTID(), FI_READ | FI_WRITE | FI_APPEND | FI_CREATED, uuid, newFd);
 
@@ -299,7 +297,6 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
     // On a normal open we just get the file from the filesTable, if it's present.
     else
     {
-        puts("Opening a file normally!");
         PTHREAD_CHECK(READLOCK);
 
         if (hashTableGet(pathname, (void **)&file, *fs->filesTable) == -1)
@@ -441,7 +438,6 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
     if (fileIsLockedBy(file, fd->uuid) == -1)
     {
-        puts("Nope sorry");
         PTHREAD_CHECK(UNLOCK);
         errno = EINVAL;
         return -1;
@@ -486,7 +482,6 @@ int appendToFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     if (!(fd->flags & FI_APPEND))
     {
-        puts("Not allowed ...");
         errno = EINVAL;
         return -1;
     }
@@ -538,7 +533,7 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
 {
     FileDescriptor *curFD;
     Metadata *cur = NULL;
-    int amount, i = 0;
+    int amount, i = 0, curCount = 0;
     size_t curSize;
     void *curBuffer;
 
@@ -550,10 +545,11 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
         amount = N;
     SAFE_NULL_CHECK(*buf = malloc(sizeof(FileContainer) * amount));
 
-    while (i < amount && i < atomicGet(fs->curN))
+    while (curCount < N && i < atomicGet(fs->curN))
     {
         // We get the files from the filesList.
         CLEANUP_ERROR_CHECK(listGet(i, (void **)&cur, fs->filesList), { LISTUNLOCK; free(*buf); });
+        i++;
 
         curSize = getSize(cur->name, fs);
         CLEANUP_CHECK(curBuffer = malloc(curSize), NULL, { LISTUNLOCK; });
@@ -577,14 +573,15 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
         }
 
         // And put them in a container inside of the output buffer.
-        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[i])), {LISTUNLOCK;  free(*buf); });
+        CLEANUP_ERROR_CHECK(containerInit(curSize, curBuffer, cur->name, &((*buf)[curCount])), {LISTUNLOCK;  free(*buf); });
         free(curBuffer);
-        i++;
+        curCount++;
     }
+    *buf = realloc(*buf, sizeof(FileContainer) * curCount);
     PTHREAD_CHECK(LISTUNLOCK);
 
     atomicInc(1, fs->fsStats->readN);
-    return i;
+    return curCount;
 }
 
 /**

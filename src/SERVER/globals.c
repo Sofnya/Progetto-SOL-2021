@@ -15,6 +15,7 @@ int64_t MAX_MEMORY = 100 * 1024 * 1024;
 int ENABLE_COMPRESSION = 1;
 int VERBOSE_PRINT = 0;
 int POLICY = P_LRU;
+int ONE_LOCK_POLICY = 1;
 
 /**
  * @brief Parses given config file, loading all global configuration settings from it.
@@ -217,6 +218,23 @@ void load_config(char *path)
                 printf("Invalid policy %s on line %d, ignoring.\n", value, lineN);
             }
         }
+        else if (!strcmp(option, "ONE_LOCK_POLICY"))
+        {
+
+            if (!strncmp(value, "TRUE", 4))
+            {
+                ONE_LOCK_POLICY = 1;
+            }
+            else if (!strncmp(value, "FALSE", 5))
+            {
+                ONE_LOCK_POLICY = 0;
+            }
+            else
+            {
+                printf("Invalid value %s on line %d, ignoring.\n", value, lineN);
+            }
+        }
+
         else
         {
             printf("Unsupported option %s at line %d, ignoring.\n", option, lineN);
@@ -232,7 +250,7 @@ void load_config(char *path)
 
     // At the end we print a summary of loaded configuration.
     puts("Succesfully loaded config:");
-    printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\nVERBOSE_PRINT:%d\nLOG_FILE:%s\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, VERBOSE_PRINT, LOG_FILE);
+    printf("SOCK_NAME:%s\nCORE_POOL_SIZE:%ld\nMAX_POOL_SIZE:%ld\nMAX_FILES:%ld\nMAX_MEMORY:%ld\nENABLE_COMPRESSION:%d\nVERBOSE_PRINT:%d\nLOG_FILE:%s\nONE_LOCK_POLICY:%d\n", SOCK_NAME, CORE_POOL_SIZE, MAX_POOL_SIZE, MAX_FILES, MAX_MEMORY, ENABLE_COMPRESSION, VERBOSE_PRINT, LOG_FILE, ONE_LOCK_POLICY);
 
     // Policy is longer as it's not a printable value by default.
     switch (POLICY)

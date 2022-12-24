@@ -15,6 +15,7 @@ extern int64_t MAX_MEMORY;
 extern int ENABLE_COMPRESSION;
 extern int VERBOSE_PRINT;
 extern int POLICY;
+extern int ONE_LOCK_POLICY;
 
 void load_config(char *path);
 #endif

@@ -252,18 +252,15 @@ int fileIsLockedBy(File *file, char *uuid)
 
     if (uuid == NULL || file->lockedBy == NULL)
     {
-        puts("Not locked by u");
         return -1;
     }
 
     if (strcmp(uuid, file->lockedBy) == 0)
     {
-        puts("Yeah locked by u");
         return 0;
     }
     else
     {
-        puts("Not locked by u");
         return -1;
     }
 }
@@ -278,10 +275,8 @@ int fileIsLocked(File *file)
 {
     if (file->lockedBy != NULL)
     {
-        puts("Locked!");
         return 0;
     }
-    puts("Not locked!");
     return -1;
 }
 

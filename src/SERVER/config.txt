@@ -23,3 +23,6 @@ LOG_FILE=log
 //POLICY specifica la policy da utilizzare per gestire i capacity miss.
 //Le opzioni sono: RANDOM, FIFO, LIFO, LRU, MRU, LU, MU, SMOL, BIGG e LFU.
 POLICY=LFU
+
+//ONE_LOCK_POLICY può essere TRUE o FALSE, se TRUE limiterà ogni client a un unico file locked per volta.
+ONE_LOCK_POLICY=TRUE

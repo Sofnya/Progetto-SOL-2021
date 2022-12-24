@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #include "SERVER/lockhandler.h"
 
@@ -37,11 +38,20 @@ void lockHandler(void *args)
     HandlerRequest *request;
     HandlerRequest *request_tmp;
 
+    // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
+    sigset_t sigmask;
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGHUP);
+    sigaddset(&sigmask, SIGQUIT);
+    pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
     logger("Starting", "LOCKHANDLER");
     while (!(*terminate))
     {
         request = (HandlerRequest *)syncqueuePop(queue);
-        logger("Received request", "LOCKHANDLER");
+        sprintf(log, ">Queue size:%ld >Waiting size:%ld", syncqueueLen(*queue), hashTableSize(waitingLocks));
+        logger(log, "LOCKHANDLER");
         if (request == NULL)
         {
             continue;
@@ -70,7 +80,7 @@ void lockHandler(void *args)
                     UNSAFE_NULL_CHECK(waitingList = malloc(sizeof(List)));
                     PRINT_ERROR_CHECK(listInit(waitingList));
                     PRINT_ERROR_CHECK(listPush((void *)request, waitingList));
-                    PRINT_ERROR_CHECK(hashTablePut(request->name, (void **)&waitingList, waitingLocks));
+                    PRINT_ERROR_CHECK(hashTablePut(request->name, (void *)waitingList, waitingLocks));
                 }
                 else
                 {
@@ -82,12 +92,12 @@ void lockHandler(void *args)
         case (R_UNLOCK):
         {
 
-            if (isLockedByFile(request->name, request->uuid, fs))
+            if (isLockedByFile(request->name, request->uuid, fs) == 0)
             {
 
                 logger("Request:UNLOCK >Success", "LOCKHANDLER");
                 PRINT_ERROR_CHECK(unlockFile(request->name, fs));
-                if (hashTableGet(request->name, (void **)waitingList, waitingLocks) == 0)
+                if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
                 {
                     PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
                     logger("Waking 1 waiting request", "LOCKHANDLER");
@@ -142,7 +152,7 @@ void lockHandler(void *args)
         {
 
             logger("Request:UNLOCK_NOTIFY", "LOCKHANDLER");
-            if (hashTableGet(request->name, (void **)waitingList, waitingLocks) == 0)
+            if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
             {
                 PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
 

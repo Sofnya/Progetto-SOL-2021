@@ -417,7 +417,7 @@ int hashTablePop(char **key, void **value, HashTable table)
 long long hashTableSize(HashTable table)
 {
     int i;
-    long long count;
+    long long count = 0;
 
     // This isn't guarateed to be accurate as it's not thread-safe, but in a non thread-safe situation this will still get a roughly accurate result.
     for (i = 0; i < table.size; i++)
