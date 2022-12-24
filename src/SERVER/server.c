@@ -33,6 +33,14 @@ struct _messageArgs
     Message *m;
 };
 
+struct _recieveArgs
+{
+    int fd;
+    ConnState *state;
+    fd_set *set;
+};
+
+void recieveRequest(void *argsIn);
 void acceptRequests();
 Message *parseRequest(Message *request, ConnState *state);
 
@@ -130,7 +138,7 @@ int main(int argc, char *argv[])
     hargs->tp = &pool;
     hargs->msgQueue = fs.lockHandlerQueue;
     hargs->terminate = &lockHandlerTerminate;
-    pthread_create(&lockHandlerPid, NULL, &lockHandler, (void *)hargs);
+    PTHREAD_CHECK(pthread_create(&lockHandlerPid, NULL, &lockHandler, (void *)hargs));
 
     // And open our socket.
     ERROR_CHECK(sfd = socket(AF_UNIX, SOCK_STREAM, 0));
@@ -177,6 +185,7 @@ int main(int argc, char *argv[])
     // Then the LockHandler.
     lockHandlerTerminate = 1;
     syncqueueClose(fs.lockHandlerQueue);
+    PTHREAD_CHECK(pthread_join(lockHandlerPid, NULL));
 
     exit(EXIT_SUCCESS);
 }
@@ -186,12 +195,12 @@ void acceptRequests()
     int fd_sk = sfd, fd_c, fd_num = 0, fd, i = 0;
     int *curFD;
     fd_set set, rdset;
-    Message *request;
-    struct _handleArgs *args;
-    HandlerRequest *handlerRequest;
+    struct timespec tv, tvOriginal;
+    struct _recieveArgs *args;
     HashTable connStates;
     ConnState *cur;
     void *saveptr = NULL;
+    char x;
 
     // An int is at most 10^19, so 19 chars long, we set length to 30 just to be safe :/.
     char curKey[30];
@@ -200,6 +209,9 @@ void acceptRequests()
     sigset_t new_sigmask;
 
     hashTableInit(1024, &connStates);
+
+    tvOriginal.tv_sec = 0;
+    tvOriginal.tv_nsec = 1e7;
 
     if (fd_sk > fd_num)
     {
@@ -221,7 +233,8 @@ void acceptRequests()
     {
         rdset = set;
 
-        if (pselect(fd_num + 1, &rdset, NULL, NULL, NULL, &old_sigmask) == -1)
+        tv = tvOriginal;
+        if (pselect(fd_num + 1, &rdset, NULL, NULL, &tv, &old_sigmask) == -1)
         {
             continue;
         }
@@ -262,51 +275,27 @@ void acceptRequests()
                     }
                     else
                     {
-                        request = malloc(sizeof(Message));
                         // A new request is ready.
-                        if (receiveMessage(fd, request) != -1)
+                        if (recv(fd, (void *)&x, 1, MSG_DONTWAIT | MSG_PEEK) == 1)
                         {
+                            printf("Socket %ld ready for read!!\n", fd);
                             sprintf(curKey, "%d", fd);
 
                             PRINT_ERROR_CHECK(hashTableGet(curKey, (void **)&cur, connStates));
 
                             UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
                             args->fd = fd;
-                            args->request = request;
                             args->state = cur;
-                            args->counter = atomicInc(1, &cur->requestN) - 1;
+                            args->set = &set;
 
-                            atomicInc(1, &cur->inUse);
+                            // Temporarily unset the fd, will be set again from within the threadpool request.
+                            FD_CLR(fd, &set);
 
-                            logRequest(request, *cur);
-                            if ((request->type == MT_FOPEN) && ((*(int *)request->content) & O_LOCK) && !((*(int *)request->content) & O_CREATE))
-                            {
-                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
-                                handlerRequestInit(R_OPENLOCK, request->info, cur->uuid, args, handlerRequest);
-                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
-                            }
-                            else if (request->type == MT_FLOCK)
-                            {
-                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
-                                handlerRequestInit(R_LOCK, request->info, cur->uuid, args, handlerRequest);
-                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
-                            }
-                            else if (request->type == MT_FUNLOCK)
-                            {
-                                UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
-                                handlerRequestInit(R_UNLOCK, request->info, cur->uuid, args, handlerRequest);
-                                syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
-                            }
-                            else
-                            {
-                                PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, args, &pool));
-                            }
+                            PRINT_ERROR_CHECK(threadpoolSubmit(recieveRequest, (void *)args, &pool));
                         }
                         // Or a socket was closed, we handle the disconnection.
                         else
                         {
-                            free(request);
-
                             // Remove the corresponding ConnState from the HashTable.
                             sprintf(curKey, "%d", fd);
                             PRINT_ERROR_CHECK(hashTableRemove(curKey, (void **)&cur, connStates));
@@ -385,6 +374,63 @@ void acceptRequests()
     hashTableDestroy(&connStates);
 }
 
+void recieveRequest(void *argsIn)
+{
+    struct _recieveArgs recieveArgs = *(struct _recieveArgs *)argsIn;
+    int fd = recieveArgs.fd;
+    ConnState *state = recieveArgs.state;
+    fd_set *set = recieveArgs.set;
+
+    free(argsIn);
+
+    struct _handleArgs *args;
+    HandlerRequest *handlerRequest;
+
+    Message *request = malloc(sizeof(Message));
+
+    // A new request is ready.
+    if (receiveMessage(fd, request) != -1)
+    {
+        FD_SET(fd, set);
+        printf("Recieved message from %ld\n", fd);
+
+        UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
+        args->fd = fd;
+        args->request = request;
+        args->state = state;
+        args->counter = atomicInc(1, &state->requestN) - 1;
+
+        atomicInc(1, &state->inUse);
+
+        logRequest(request, *state);
+        if ((request->type == MT_FOPEN) && ((*(int *)request->content) & O_LOCK) && !((*(int *)request->content) & O_CREATE))
+        {
+            UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+            handlerRequestInit(R_OPENLOCK, request->info, state->uuid, args, handlerRequest);
+            syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+        }
+        else if (request->type == MT_FLOCK)
+        {
+            UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+            handlerRequestInit(R_LOCK, request->info, state->uuid, args, handlerRequest);
+            syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+        }
+        else if (request->type == MT_FUNLOCK)
+        {
+            UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
+            handlerRequestInit(R_UNLOCK, request->info, state->uuid, args, handlerRequest);
+            syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
+        }
+        else
+        {
+            handleRequest(args);
+        }
+    }
+    else
+    {
+        FD_SET(fd, set);
+    }
+}
 void handleRequest(void *args)
 {
     struct _handleArgs handleArgs = *(struct _handleArgs *)args;
@@ -670,8 +716,10 @@ Message *parseRequest(Message *request, ConnState *state)
 
     case (MT_FLOCK):
     {
+
         if (request->status == MS_OK)
         {
+            conn_lockFile(request->info, state);
             messageInit(0, NULL, "LOCKED", MT_INFO, MS_OK, response);
         }
         else
@@ -685,6 +733,7 @@ Message *parseRequest(Message *request, ConnState *state)
     {
         if (request->status == MS_OK)
         {
+            conn_unlockFile(request->info, state);
             messageInit(0, NULL, "UNLOCKED", MT_INFO, MS_OK, response);
         }
         else
