@@ -33,6 +33,9 @@ int fileInit(const char *name, int isCompressed, File *file)
     SAFE_NULL_CHECK(file->metadata = malloc(sizeof(Metadata)));
     metadataInit(name, file->metadata);
 
+    UNSAFE_NULL_CHECK(file->lock = malloc(sizeof(pthread_spinlock_t)));
+    PTHREAD_CHECK(pthread_spin_init(file->lock, PTHREAD_PROCESS_PRIVATE));
+
     return 0;
 }
 
@@ -54,6 +57,9 @@ int fileDestroy(File *file)
 
     metadataDestroy(file->metadata);
     free(file->metadata);
+
+    PTHREAD_CHECK(pthread_spin_destroy(file->lock));
+    free((void *)file->lock);
 
     return 0;
 }
@@ -141,6 +147,7 @@ int metadataUpdateSize(Metadata *metadata, size_t size)
  */
 int fileWrite(const void *content, size_t size, File *file)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
     file->size = size;
     metadataAccess(file->metadata);
     metadataUpdateSize(file->metadata, size);
@@ -160,8 +167,10 @@ int fileWrite(const void *content, size_t size, File *file)
     if (file->isCompressed)
     {
         file->isCompressed = 0;
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
         return fileCompress(file);
     }
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
 
     return 0;
 }
@@ -176,6 +185,8 @@ int fileWrite(const void *content, size_t size, File *file)
  */
 int fileAppend(const void *content, size_t size, File *file)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     // Need to remember if the File was compressed at the start.
     int shouldCompress = file->isCompressed;
 
@@ -204,8 +215,11 @@ int fileAppend(const void *content, size_t size, File *file)
     // If it was compressed at the start, we compress it again now.
     if (shouldCompress)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
         return fileCompress(file);
     }
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
     return 0;
 }
 
@@ -221,11 +235,15 @@ int fileRead(void *buf, size_t bufsize, File *file)
 {
     size_t n;
 
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     metadataAccess(file->metadata);
 
     // If File is compressed, we directly decompress it inside of the buffer.
     if (file->isCompressed)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         return uncompress(buf, &bufsize, file->content, file->compressedSize);
     }
 
@@ -235,6 +253,8 @@ int fileRead(void *buf, size_t bufsize, File *file)
         n = file->size;
 
     memcpy(buf, file->content, n);
+
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
 
     return 0;
 }
@@ -248,19 +268,27 @@ int fileRead(void *buf, size_t bufsize, File *file)
  */
 int fileIsLockedBy(File *file, char *uuid)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     metadataAccess(file->metadata);
 
     if (uuid == NULL || file->lockedBy == NULL)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         return -1;
     }
 
     if (strcmp(uuid, file->lockedBy) == 0)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         return 0;
     }
     else
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         return -1;
     }
 }
@@ -273,10 +301,16 @@ int fileIsLockedBy(File *file, char *uuid)
  */
 int fileIsLocked(File *file)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     if (file->lockedBy != NULL)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         return 0;
     }
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
     return -1;
 }
 
@@ -289,15 +323,21 @@ int fileIsLocked(File *file)
  */
 int fileLock(File *file, char *uuid)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     metadataAccess(file->metadata);
 
     if (file->lockedBy != NULL || uuid == NULL)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         errno = EINVAL;
         return -1;
     }
     SAFE_NULL_CHECK(file->lockedBy = malloc(strlen(uuid) + 1));
     strcpy(file->lockedBy, uuid);
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
     return 0;
 }
 
@@ -309,14 +349,20 @@ int fileLock(File *file, char *uuid)
  */
 int fileUnlock(File *file)
 {
+    PTHREAD_CHECK(pthread_spin_lock(file->lock));
+
     metadataAccess(file->metadata);
     if (file->lockedBy == NULL)
     {
+        PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
         errno = EINVAL;
         return -1;
     }
     free(file->lockedBy);
     file->lockedBy = NULL;
+    PTHREAD_CHECK(pthread_spin_unlock(file->lock));
+
     return 0;
 }
 

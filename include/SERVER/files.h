@@ -23,6 +23,7 @@ typedef struct _file
     size_t compressedSize;
     volatile int isCompressed;
     char *lockedBy;
+    pthread_spinlock_t *lock;
 
     Metadata *metadata;
 } File;
