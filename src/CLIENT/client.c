@@ -11,6 +11,7 @@
 #include "CLIENT/clientHelpers.h"
 #include "COMMON/macros.h"
 #include "COMMON/helpers.h"
+#include "COMMON/hashtable.h"
 
 #define UNIX_PATH_MAX 108
 #define SOCKNAME "defaultAddress"
@@ -18,14 +19,16 @@
 
 int writeNFiles(char *dir, int n, char *missDirName, int delay);
 
-char *lockedFile = NULL;
-
 int main(int argc, char *argv[])
 {
     int opt;
     int n;
     long delay = 0;
     char *missDirName = NULL, *readDirName = NULL, *sockname = NULL, *tmp;
+    HashTable lockedFiles;
+    void *value;
+
+    hashTableInit(100, &lockedFiles);
 
     // Ignore SIGPIPE to avoid problems with read/writes on pipes.
     sigaction(SIGPIPE, &(struct sigaction){{SIG_IGN}}, NULL);
@@ -113,9 +116,12 @@ int main(int argc, char *argv[])
                 usleep(delay);
 
                 // Try to create the file first.
-                if ((create_file(tmp, O_CREATE | O_LOCK, missDirName) == -1) && verbose)
+                if ((create_file(tmp, O_CREATE | O_LOCK, missDirName) == -1))
                 {
-                    printf("Couldn't create file %s\n", tmp);
+                    if (verbose)
+                    {
+                        printf("Couldn't create file %s\n", tmp);
+                    }
                     continue;
                 }
                 usleep(delay);
@@ -132,7 +138,7 @@ int main(int argc, char *argv[])
 
                 if (verbose)
                 {
-                    printf("Succesfully wrote file %s\n", tmp);
+                    printf("Wrote file %s\n", tmp);
                 }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
@@ -159,8 +165,8 @@ int main(int argc, char *argv[])
             tmp = strtok_r(optarg, ",", &saveptr);
             do
             {
-                // Open the file if it's not already our locked file.
-                if (lockedFile == NULL || (strcmp(tmp, lockedFile)))
+                // Open the file if it's not already one of our locked files.
+                if (hashTableGet(tmp, &value, lockedFiles) == -1)
                 {
                     usleep(delay);
                     if (openFile(tmp, 0) == -1)
@@ -194,7 +200,7 @@ int main(int argc, char *argv[])
                 }
 
                 // If the file wasn't locked before, then we opened it for the read, and should now close it again.
-                if (lockedFile == NULL || strcmp(tmp, lockedFile))
+                if (hashTableGet(tmp, &value, lockedFiles) == -1)
                 {
                     usleep(delay);
                     if (closeFile(tmp) == -1 && verbose)
@@ -274,14 +280,8 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
-                    // Keep track of our locked file.
-                    if (lockedFile != NULL)
-                    {
-                        free(lockedFile);
-                        lockedFile = NULL;
-                    }
-                    UNSAFE_NULL_CHECK(lockedFile = malloc((strlen(tmp) + 1) * sizeof(char)));
-                    strcpy(lockedFile, tmp);
+                    // Keep track of our locked files.
+                    hashTablePut(tmp, NULL, lockedFiles);
                 }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
@@ -310,11 +310,7 @@ int main(int argc, char *argv[])
                     closeFile(tmp);
 
                     // Once unlocked and closed, remove it from locked file.
-                    if (lockedFile != NULL)
-                    {
-                        free(lockedFile);
-                        lockedFile = NULL;
-                    }
+                    hashTableRemove(tmp, &value, lockedFiles);
                 }
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             break;
@@ -329,7 +325,7 @@ int main(int argc, char *argv[])
             do
             {
                 // If the file isn't already locked, open and lock it.
-                if (lockedFile == NULL || !strcmp(tmp, lockedFile))
+                if (hashTableGet(tmp, &value, lockedFiles) == -1)
                 {
                     usleep(delay);
                     if (openFile(tmp, O_LOCK) == -1)
@@ -340,17 +336,7 @@ int main(int argc, char *argv[])
                         }
                         continue;
                     }
-                    else
-                    {
-                        if (lockedFile != NULL)
-                        {
-                            free(lockedFile);
-                            lockedFile = NULL;
-                        }
-                        UNSAFE_NULL_CHECK(lockedFile = malloc((strlen(tmp) + 1) * sizeof(char)));
-                        strcpy(lockedFile, tmp);
-                    }
-                    if (verbose)
+                    else if (verbose)
                     {
                         printf("Opened file %s for removal.\n", tmp);
                     }
@@ -369,12 +355,8 @@ int main(int argc, char *argv[])
                     printf("Removed file %s\n", tmp);
                 }
 
-                // If we managed to remove our locked file, update it.
-                if (lockedFile != NULL)
-                {
-                    free(lockedFile);
-                    lockedFile = NULL;
-                }
+                // If we managed to remove one of our locked files, update it.
+                hashTableRemove(tmp, &value, lockedFiles);
 
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
             puts(optarg);
@@ -400,10 +382,8 @@ int main(int argc, char *argv[])
         usleep(delay);
         closeConnection(sockname);
     }
-    if (lockedFile != NULL)
-    {
-        free(lockedFile);
-    }
+
+    hashTableDestroy(&lockedFiles);
 }
 
 /**
@@ -455,14 +435,6 @@ int writeNFiles(char *dirPath, int n, char *missDirName, int delay)
                 }
                 free(path);
                 continue;
-            }
-            else
-            {
-                if (lockedFile != NULL)
-                {
-                    free(lockedFile);
-                    lockedFile = NULL;
-                }
             }
             usleep(delay);
             if (writeFile(path, missDirName) == -1)

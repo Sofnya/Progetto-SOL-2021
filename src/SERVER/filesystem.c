@@ -10,6 +10,7 @@
 #include "SERVER/policy.h"
 #include "SERVER/logging.h"
 #include "SERVER/lockhandler.h"
+#include "SERVER/globals.h"
 
 #define READLOCK readLock(fs->rwLock, __LINE__, __func__)
 #define WRITELOCK writeLock(fs->rwLock, __LINE__, __func__)
@@ -217,6 +218,7 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
 {
     File *file;
     FileDescriptor *newFd;
+    HandlerRequest *request;
     char log[500];
 
     // The only way to create a file in the FileSystem is to go through here.
@@ -242,6 +244,14 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
 
             errno = EOVERFLOW;
             return -1;
+        }
+
+        // Notify the lockHandler of a lock create, which is only needed for the ONE_LOCK_POLICY
+        if (ONE_LOCK_POLICY && (flags & O_LOCK) && (flags & O_CREATE))
+        {
+            UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
+            handlerRequestInit(R_LOCK_CREATE_NOTIFY, pathname, uuid, NULL, request);
+            syncqueuePush((void *)request, fs->lockHandlerQueue);
         }
 
         // If everything is fine, we create the file, initialize it, and put it inside of the FileSystem.
@@ -330,9 +340,9 @@ int openFile(char *pathname, int flags, char *uuid, FileDescriptor **fd, FileSys
 int closeFile(FileDescriptor *fd, FileSystem *fs)
 {
     HandlerRequest *request;
-    if (fd->flags & FI_LOCK)
+    if (isLockedByFile(fd->name, fd->uuid, fs) == 0)
     {
-        unlockFile(fd->name, fs);
+        PRINT_ERROR_CHECK(unlockFile(fd->name, fs));
 
         UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
         handlerRequestInit(R_UNLOCK_NOTIFY, fd->name, fd->uuid, NULL, request);
@@ -423,7 +433,7 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
     File *file;
     size_t oldSize, newSize;
     char log[500];
-    if (!((fd->flags & FI_WRITE) && (fd->flags & FI_LOCK) && (fd->flags & FI_CREATED)))
+    if (!((fd->flags & FI_WRITE) && (fd->flags & FI_CREATED) && (isLockedByFile(fd->name, fd->uuid, fs) == 0)))
     {
         errno = EINVAL;
         return -1;
@@ -436,12 +446,6 @@ int writeFile(FileDescriptor *fd, void *buf, size_t size, FileSystem *fs)
 
     PTHREAD_CHECK(WRITELOCK);
     CLEANUP_ERROR_CHECK(hashTableGet(fd->name, (void **)&file, *fs->filesTable), { UNLOCK; });
-    if (fileIsLockedBy(file, fd->uuid) == -1)
-    {
-        PTHREAD_CHECK(UNLOCK);
-        errno = EINVAL;
-        return -1;
-    }
 
     oldSize = getFileTrueSize(file);
     CLEANUP_ERROR_CHECK(fileWrite(buf, size, file), { UNLOCK; });
@@ -562,12 +566,14 @@ int readNFiles(int N, FileContainer **buf, char *uuid, FileSystem *fs)
         if (readFile(curFD, &curBuffer, curSize, fs) == -1)
         {
             free(curBuffer);
+            fdDestroy(curFD);
             free(curFD);
             continue;
         }
         if (closeFile(curFD, fs) == -1)
         {
             free(curBuffer);
+            fdDestroy(curFD);
             free(curFD);
             continue;
         }
@@ -699,7 +705,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     HandlerRequest *request;
 
     // Check if the file is locked.
-    if (!(fd->flags & FI_LOCK))
+    if (isLockedByFile(fd->name, fd->uuid, fs) == -1)
     {
         errno = EINVAL;
         return -1;
@@ -756,7 +762,7 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
     atomicInc(1, fs->fsStats->unlock);
 
     UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
-    handlerRequestInit(R_REMOVE, fd->name, "UNUSED", NULL, request);
+    handlerRequestInit(R_REMOVE, fd->name, fd->uuid, NULL, request);
     syncqueuePush((void *)request, fs->lockHandlerQueue);
 
     return 0;

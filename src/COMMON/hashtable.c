@@ -238,6 +238,7 @@ int _rowPop(struct _entry *el, struct _row row)
     if (tmp == 0)
     {
         *el = *curel;
+        free(curel);
     }
     PTHREAD_CHECK(pthread_mutex_unlock(row.mtx));
 
@@ -476,5 +477,20 @@ void printHashTable(HashTable table)
     for (i = 0; i < table.size; i++)
     {
         _printRow(table._table[i]);
+    }
+}
+
+/**
+ * @brief For debugging, prints given HashTable's contents using a custom print function.
+ *
+ * @param table the HashTable to print.
+ * @param fnc a function returning a malloced string from a row element.
+ */
+void customPrintHashTable(HashTable table, char *(*fnc)(void *))
+{
+    int i;
+    for (i = 0; i < table.size; i++)
+    {
+        customPrintList(table._table[i].row, fnc);
     }
 }

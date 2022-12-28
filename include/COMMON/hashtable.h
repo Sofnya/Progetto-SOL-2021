@@ -45,5 +45,6 @@ size_t _getLoc(const char *key, size_t size);
 
 void _printRow(struct _row row);
 void printHashTable(HashTable table);
+void customPrintHashTable(HashTable table, char *(*fnc)(void *));
 
 #endif

@@ -10,6 +10,8 @@
 #define R_REMOVE 2
 #define R_OPENLOCK 3
 #define R_UNLOCK_NOTIFY 4
+#define R_LOCK_CREATE_NOTIFY 5
+#define R_DISCONNECT_NOTIFY 6
 
 typedef struct _handlerRequest
 {
@@ -27,7 +29,7 @@ struct _handlerArgs
     volatile int *terminate;
 };
 
-void lockHandler(void *args);
+void *lockHandler(void *args);
 
 int handlerRequestInit(int type, char *name, char *uuid, struct _handleArgs *args, HandlerRequest *request);
 void handlerRequestDestroy(HandlerRequest *request);

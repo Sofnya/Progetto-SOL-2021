@@ -33,14 +33,14 @@ struct _messageArgs
     Message *m;
 };
 
-struct _recieveArgs
+struct _receiveArgs
 {
     int fd;
     ConnState *state;
     fd_set *set;
 };
 
-void recieveRequest(void *argsIn);
+void receiveRequest(void *argsIn);
 void acceptRequests();
 Message *parseRequest(Message *request, ConnState *state);
 
@@ -196,7 +196,7 @@ void acceptRequests()
     int *curFD;
     fd_set set, rdset;
     struct timespec tv, tvOriginal;
-    struct _recieveArgs *args;
+    struct _receiveArgs *args;
     HashTable connStates;
     ConnState *cur;
     void *saveptr = NULL;
@@ -278,7 +278,6 @@ void acceptRequests()
                         // A new request is ready.
                         if (recv(fd, (void *)&x, 1, MSG_DONTWAIT | MSG_PEEK) == 1)
                         {
-                            printf("Socket %ld ready for read!!\n", fd);
                             sprintf(curKey, "%d", fd);
 
                             PRINT_ERROR_CHECK(hashTableGet(curKey, (void **)&cur, connStates));
@@ -291,7 +290,7 @@ void acceptRequests()
                             // Temporarily unset the fd, will be set again from within the threadpool request.
                             FD_CLR(fd, &set);
 
-                            PRINT_ERROR_CHECK(threadpoolSubmit(recieveRequest, (void *)args, &pool));
+                            PRINT_ERROR_CHECK(threadpoolSubmit(receiveRequest, (void *)args, &pool));
                         }
                         // Or a socket was closed, we handle the disconnection.
                         else
@@ -374,12 +373,12 @@ void acceptRequests()
     hashTableDestroy(&connStates);
 }
 
-void recieveRequest(void *argsIn)
+void receiveRequest(void *argsIn)
 {
-    struct _recieveArgs recieveArgs = *(struct _recieveArgs *)argsIn;
-    int fd = recieveArgs.fd;
-    ConnState *state = recieveArgs.state;
-    fd_set *set = recieveArgs.set;
+    struct _receiveArgs receiveArgs = *(struct _receiveArgs *)argsIn;
+    int fd = receiveArgs.fd;
+    ConnState *state = receiveArgs.state;
+    fd_set *set = receiveArgs.set;
 
     free(argsIn);
 
@@ -392,7 +391,6 @@ void recieveRequest(void *argsIn)
     if (receiveMessage(fd, request) != -1)
     {
         FD_SET(fd, set);
-        printf("Recieved message from %ld\n", fd);
 
         UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
         args->fd = fd;
@@ -564,8 +562,12 @@ Message *parseRequest(Message *request, ConnState *state)
                 }
                 free(fcs);
             }
-            return response;
         }
+        else
+        {
+            messageInit(0, NULL, "ERROR", MT_INFO, MS_ERR, response);
+        }
+        return response;
     }
 
     case (MT_FCLOSE):
@@ -717,9 +719,8 @@ Message *parseRequest(Message *request, ConnState *state)
     case (MT_FLOCK):
     {
 
-        if (request->status == MS_OK)
+        if (request->status == MS_OK && (conn_lockFile(request->info, state) == 0))
         {
-            conn_lockFile(request->info, state);
             messageInit(0, NULL, "LOCKED", MT_INFO, MS_OK, response);
         }
         else
@@ -731,9 +732,8 @@ Message *parseRequest(Message *request, ConnState *state)
 
     case (MT_FUNLOCK):
     {
-        if (request->status == MS_OK)
+        if (request->status == MS_OK && (conn_unlockFile(request->info, state) == 0))
         {
-            conn_unlockFile(request->info, state);
             messageInit(0, NULL, "UNLOCKED", MT_INFO, MS_OK, response);
         }
         else
@@ -824,7 +824,24 @@ void logRequest(Message *request, ConnState state)
         }
         case (MT_FOPEN):
         {
-            sprintf(parsed, ">OPEN >UUID:%s >%s", state.uuid, request->info);
+            int flags = *(int *)request->content;
+            if ((flags & O_CREATE) && (flags & O_LOCK))
+            {
+                sprintf(parsed, ">OPEN|CREATE|LOCK >UUID:%s >%s", state.uuid, request->info);
+            }
+            else if (flags & O_CREATE)
+            {
+                sprintf(parsed, ">OPEN|CREATE >UUID:%s >%s", state.uuid, request->info);
+            }
+            else if (flags & O_LOCK)
+            {
+                sprintf(parsed, ">OPEN|LOCK >UUID:%s >%s", state.uuid, request->info);
+            }
+            else
+            {
+                sprintf(parsed, ">OPEN >UUID:%s >%s", state.uuid, request->info);
+            }
+
             break;
         }
         case (MT_FCLOSE):

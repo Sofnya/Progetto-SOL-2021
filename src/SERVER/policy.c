@@ -179,11 +179,12 @@ int missPolicy(FileDescriptor **fd, FileSystem *fs)
     {
         SAFE_ERROR_CHECK(listGet(i, (void **)&target, fs->filesList));
         SAFE_ERROR_CHECK(openFile(target->name, 0, "ADMIN:MISSPOLICY", fd, fs));
-        if (isLockedFile((*fd)->name, fs) != 0)
+        if (lockFile(target->name, "ADMIN:MISSPOLICY", fs) == 0)
         {
             (*fd)->flags |= FI_LOCK;
             return 0;
         }
+
         SAFE_ERROR_CHECK(closeFile(*fd, fs));
     }
 

@@ -10,10 +10,12 @@ mkdir smallRand
 cd smallRand
 ../../createRandomFiles.sh 100 1000
 cd ../
-
-mkdir rand
-cd rand
-../../createRandomFiles.sh 10 100000
-
-cd ../
+for i in $(seq 10)
+do
+    target="rand$i"
+    mkdir $target
+    cd $target
+    ../../createRandomFiles.sh 10 100000
+    cd ../
+done
 xxd -l 10000 -c 1000 -p < /dev/urandom > hex

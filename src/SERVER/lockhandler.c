@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <errno.h>
 
 #include "SERVER/lockhandler.h"
 
@@ -19,7 +20,59 @@ void _requestRespond(HandlerRequest *request, int status, ThreadPool *tp)
     PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, request->args, tp));
 }
 
-void lockHandler(void *args)
+char *_printWaitingList(void *el)
+{
+    struct _entry a = *(struct _entry *)el;
+    char *res;
+    HandlerRequest *cur;
+    List *waitingList = (List *)a.value;
+    void *saveptr = NULL;
+    int len;
+    int count;
+
+    len = strlen(a.key) + 100;
+    len += listSize(*waitingList) * 90;
+
+    UNSAFE_NULL_CHECK(res = malloc(len));
+
+    count = sprintf(res, "Key: %s\n", a.key);
+    while (listScan((void **)&cur, &saveptr, waitingList) != -1)
+    {
+        count += sprintf(res + count, "%s | ", cur->uuid);
+    }
+    return res;
+}
+
+char *_printLockedFiles(void *el)
+{
+    struct _entry a = *(struct _entry *)el;
+    char *res;
+    int len;
+
+    len = strlen(a.key);
+    len += strlen((const char *)a.value);
+    len += 100;
+    res = malloc(len);
+    sprintf(res, "%s : %s", a.key, (char *)a.value);
+    return res;
+}
+void _printAllLocks(HashTable lockedFiles, HashTable waitingLocks)
+{
+    if (ONE_LOCK_POLICY && (hashTableSize(lockedFiles) > 0))
+    {
+        puts("\n------------\nLocked Files:");
+        customPrintHashTable(lockedFiles, &_printLockedFiles);
+        puts("\n------------");
+    }
+    if (hashTableSize(waitingLocks) > 0)
+    {
+        puts("\n------------\nWaiting Locks:");
+        customPrintHashTable(waitingLocks, &_printWaitingList);
+        puts("\n------------");
+    }
+}
+
+void *lockHandler(void *args)
 {
     struct _handlerArgs *hargs = (struct _handlerArgs *)args;
 
@@ -31,12 +84,22 @@ void lockHandler(void *args)
 
     HashTable waitingLocks;
     List *waitingList;
-    char log[200];
+    char log[500];
 
     PRINT_ERROR_CHECK(hashTableInit(MAX_FILES, &waitingLocks));
 
     HandlerRequest *request;
     HandlerRequest *request_tmp;
+
+    // For the implementation of ONE_LOCK_POLICY
+    // We keep an HashTable mapping an UUID to it's current lockedFile.
+    HashTable lockedFiles;
+    char *lockedFile;
+
+    if (ONE_LOCK_POLICY)
+    {
+        PRINT_ERROR_CHECK(hashTableInit(1024, &lockedFiles));
+    }
 
     // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
     sigset_t sigmask;
@@ -50,8 +113,10 @@ void lockHandler(void *args)
     while (!(*terminate))
     {
         request = (HandlerRequest *)syncqueuePop(queue);
-        sprintf(log, ">Queue size:%ld >Waiting size:%ld", syncqueueLen(*queue), hashTableSize(waitingLocks));
-        logger(log, "LOCKHANDLER");
+        // sprintf(log, ">Queue size:%ld >Waiting size:%lld", syncqueueLen(*queue), hashTableSize(waitingLocks));
+        // logger(log, "LOCKHANDLER");
+
+        _printAllLocks(lockedFiles, waitingLocks);
         if (request == NULL)
         {
             continue;
@@ -63,18 +128,58 @@ void lockHandler(void *args)
         case (R_OPENLOCK):
         case (R_LOCK):
         {
-            if (isLockedFile(request->name, fs) == -1)
+            // If ONE_LOCK_POLICY is activated in the config, we keep track of each connstates one locked file, and automatically unlock it before trying to lock a new file.
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableRemove(request->uuid, (void **)&lockedFile, lockedFiles) != -1)
+                {
+
+                    sprintf(log, "ONELOCKPOLICY UUID:%s  >Automatically unlocking file %20s in favour of %20s", request->uuid, lockedFile, request->name);
+                    logger(log, "LOCKHANDLER");
+
+                    PRINT_ERROR_CHECK(unlockFile(lockedFile, fs));
+
+                    // We notify ourselves for code reuse.
+                    UNSAFE_NULL_CHECK(request_tmp = malloc(sizeof(HandlerRequest)));
+                    handlerRequestInit(R_UNLOCK_NOTIFY, lockedFile, request->uuid, NULL, request_tmp);
+                    syncqueuePush((void *)request_tmp, queue);
+
+                    free(lockedFile);
+                }
+            }
+            errno = 0;
+            if (isLockedFile(request->name, fs) == -1 && errno != EBADF)
             {
 
-                logger("Request:LOCK >Satisfied", "LOCKHANDLER");
+                sprintf(log, "Request:LOCK >Success >UUID:%s >File:%s", request->uuid, request->name);
+                logger(log, "LOCKHANDLER");
                 lockFile(request->name, request->uuid, fs);
+
+                if (ONE_LOCK_POLICY)
+                {
+                    UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request->name) + 1));
+                    strcpy(lockedFile, request->name);
+                    hashTablePut(request->uuid, lockedFile, lockedFiles);
+                }
+
                 _requestRespond(request, MS_OK, tp);
+                handlerRequestDestroy(request);
+                free(request);
+            }
+            else if (errno == EBADF)
+            {
+
+                sprintf(log, "Request:LOCK >Error >UUID:%s >File:%s", request->uuid, request->name);
+                logger(log, "LOCKHANDLER");
+
+                _requestRespond(request, MS_ERR, tp);
                 handlerRequestDestroy(request);
                 free(request);
             }
             else
             {
-                logger("Request:LOCK >Put in queue", "LOCKHANDLER");
+                sprintf(log, "Request:LOCK >Queued >UUID:%s >File:%s", request->uuid, request->name);
+                logger(log, "LOCKHANDLER");
                 if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == -1)
                 {
                     UNSAFE_NULL_CHECK(waitingList = malloc(sizeof(List)));
@@ -91,18 +196,35 @@ void lockHandler(void *args)
         }
         case (R_UNLOCK):
         {
-
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableGet(request->uuid, (void **)&lockedFile, lockedFiles) != -1 && !strcmp(lockedFile, request->name))
+                {
+                    hashTableRemove(request->uuid, NULL, lockedFiles);
+                    free(lockedFile);
+                }
+            }
             if (isLockedByFile(request->name, request->uuid, fs) == 0)
             {
 
-                logger("Request:UNLOCK >Success", "LOCKHANDLER");
+                sprintf(log, "Request:UNLOCK >Success >UUID:%s >File:%s", request->uuid, request->name);
+                logger(log, "LOCKHANDLER");
                 PRINT_ERROR_CHECK(unlockFile(request->name, fs));
                 if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
                 {
                     PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
                     logger("Waking 1 waiting request", "LOCKHANDLER");
 
-                    lockFile(request->name, request->uuid, fs);
+                    PRINT_ERROR_CHECK(lockFile(request_tmp->name, request_tmp->uuid, fs));
+
+                    // In case of a woken up lock, we have to update it's lockedFile.
+                    if (ONE_LOCK_POLICY)
+                    {
+                        UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request_tmp->name) + 1));
+                        strcpy(lockedFile, request_tmp->name);
+                        hashTablePut(request_tmp->uuid, lockedFile, lockedFiles);
+                    }
+
                     _requestRespond(request_tmp, MS_OK, tp);
                     handlerRequestDestroy(request_tmp);
                     free(request_tmp);
@@ -119,7 +241,8 @@ void lockHandler(void *args)
             else
             {
 
-                logger("Request:UNLOCK >Error", "LOCKHANDLER");
+                sprintf(log, "Request:UNLOCK >Error >UUID:%s >File:%s", request->uuid, request->name);
+                logger(log, "LOCKHANDLER");
                 _requestRespond(request, MS_ERR, tp);
             }
             handlerRequestDestroy(request);
@@ -128,8 +251,17 @@ void lockHandler(void *args)
         }
         case (R_REMOVE):
         {
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableGet(request->uuid, (void **)&lockedFile, lockedFiles) != -1 && !strcmp(lockedFile, request->name))
+                {
+                    hashTableRemove(request->uuid, NULL, lockedFiles);
+                    free(lockedFile);
+                }
+            }
 
-            logger("Request:REMOVE", "LOCKHANDLER");
+            sprintf(log, "Request:REMOVE >UUID:%s >File:%s", request->uuid, request->name);
+            logger(log, "LOCKHANDLER");
             if (hashTableRemove(request->name, (void **)&waitingList, waitingLocks) == 0)
             {
                 sprintf(log, "Waking %d waiting requests", listSize(*waitingList));
@@ -151,14 +283,32 @@ void lockHandler(void *args)
         case (R_UNLOCK_NOTIFY):
         {
 
-            logger("Request:UNLOCK_NOTIFY", "LOCKHANDLER");
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableGet(request->uuid, (void **)&lockedFile, lockedFiles) != -1 && !strcmp(lockedFile, request->name))
+                {
+                    hashTableRemove(request->uuid, NULL, lockedFiles);
+                    free(lockedFile);
+                }
+            }
+            sprintf(log, "Request:UNLOCK_NOTIFY >UUID:%s >File:%s", request->uuid, request->name);
+            logger(log, "LOCKHANDLER");
             if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
             {
                 PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
 
-                logger("Waking 1 waiting request", "LOCKHANDLER");
+                sprintf(log, "Waking lock >UUID:%s >File:%s", request_tmp->uuid, request_tmp->name);
+                logger(log, "LOCKHANDLER");
 
-                lockFile(request->name, request->uuid, fs);
+                PRINT_ERROR_CHECK(lockFile(request_tmp->name, request_tmp->uuid, fs));
+
+                if (ONE_LOCK_POLICY)
+                {
+                    UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request_tmp->name) + 1));
+                    strcpy(lockedFile, request_tmp->name);
+                    hashTablePut(request_tmp->uuid, lockedFile, lockedFiles);
+                }
+
                 _requestRespond(request_tmp, MS_OK, tp);
                 handlerRequestDestroy(request_tmp);
                 free(request_tmp);
@@ -167,6 +317,49 @@ void lockHandler(void *args)
                     hashTableRemove(request->name, NULL, waitingLocks);
                     listDestroy(waitingList);
                     free(waitingList);
+                }
+            }
+            handlerRequestDestroy(request);
+            free(request);
+            break;
+        }
+        case (R_LOCK_CREATE_NOTIFY):
+        {
+            sprintf(log, "Request:LOCK_CREATE_NOTIFY >UUID:%s >File:%s", request->uuid, request->name);
+            logger(log, "LOCKHANDLER");
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableRemove(request->uuid, (void **)&lockedFile, lockedFiles) != -1)
+                {
+
+                    sprintf(log, "ONELOCKPOLICY UUID:%s >Automatically unlocking file %20s in favour of %20s", request->uuid, lockedFile, request->name);
+                    logger(log, "LOCKHANDLER");
+
+                    PRINT_ERROR_CHECK(unlockFile(lockedFile, fs));
+
+                    // We notify ourselves for code reuse.
+                    UNSAFE_NULL_CHECK(request_tmp = malloc(sizeof(HandlerRequest)));
+                    handlerRequestInit(R_UNLOCK_NOTIFY, lockedFile, request->uuid, NULL, request_tmp);
+                    syncqueuePush((void *)request_tmp, queue);
+
+                    free(lockedFile);
+                }
+
+                UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request->name) + 1));
+                strcpy(lockedFile, request->name);
+                hashTablePut(request->uuid, lockedFile, lockedFiles);
+            }
+            handlerRequestDestroy(request);
+            free(request);
+            break;
+        }
+        case (R_DISCONNECT_NOTIFY):
+        {
+            if (ONE_LOCK_POLICY)
+            {
+                if (hashTableRemove(request->uuid, (void **)&lockedFile, lockedFiles) != -1)
+                {
+                    free(lockedFile);
                 }
             }
             handlerRequestDestroy(request);
@@ -187,7 +380,19 @@ void lockHandler(void *args)
         listDestroy(waitingList);
         free(waitingList);
     }
+
     hashTableDestroy(&waitingLocks);
+
+    if (ONE_LOCK_POLICY)
+    {
+        while (hashTablePop(NULL, (void **)&lockedFile, lockedFiles) != -1)
+        {
+            free(lockedFile);
+        }
+        hashTableDestroy(&lockedFiles);
+    }
+
+    return NULL;
 }
 
 /**

@@ -8,8 +8,6 @@
 #include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
 #include "COMMON/helpers.h"
-#include "SERVER/globals.h"
-#include "SERVER/lockhandler.h"
 
 /**
  * @brief Initializes given ConnState with given FileSystem.
@@ -26,9 +24,6 @@ int connStateInit(FileSystem *fs, ConnState *state)
     // Every ConnState has it's own UUID.
     genUUID(state->uuid);
 
-    state->lockedFile = NULL;
-
-    PTHREAD_CHECK(pthread_mutex_init(&state->mtx, NULL));
     state->shouldDestroy = 0;
     atomicInit(&state->inUse);
     atomicInit(&state->requestN);
@@ -46,24 +41,13 @@ int connStateInit(FileSystem *fs, ConnState *state)
 void connStateDestroy(ConnState *state)
 {
     FileDescriptor *fd;
-    HandlerRequest *request;
 
+    printf("%s disconnecting. Closing %lld files\n", state->uuid, hashTableSize(*state->fds));
     while (hashTablePop(NULL, (void **)&fd, *(state->fds)) != -1)
     {
-        // Gotta make sure we unlock any files that were locked.
-        if (fd->flags & FI_LOCK)
-        {
-            unlockFile(fd->name, state->fs);
-            UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
-            handlerRequestInit(R_UNLOCK_NOTIFY, fd->name, fd->uuid, NULL, request);
-            syncqueuePush((void *)request, state->fs->lockHandlerQueue);
-        }
-
-        fdDestroy(fd);
-        free(fd);
+        closeFile(fd, state->fs);
     }
 
-    pthread_mutex_destroy(&state->mtx);
     atomicDestroy(&state->inUse);
     atomicDestroy(&state->requestN);
     atomicDestroy(&state->parsedN);
@@ -85,24 +69,6 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
 {
     FileDescriptor *fd, *tmp;
     int capMiss = 0;
-    HandlerRequest *request;
-
-    // If we are locking a File, we have to unlock our previous lockedFile, if present, according to the one-file policy.
-    if (ONE_LOCK_POLICY && flags & O_LOCK)
-    {
-        if (state->lockedFile != NULL)
-        {
-            printf("\n\nUUID:%s Automatically unlocking file %s in favour of %s\n\n\n", state->uuid, state->lockedFile->name, path);
-
-            unlockFile(state->lockedFile->name, state->fs);
-
-            UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
-            handlerRequestInit(R_UNLOCK_NOTIFY, state->lockedFile->name, state->uuid, NULL, request);
-            syncqueuePush((void *)request, state->fs->lockHandlerQueue);
-
-            state->lockedFile = NULL;
-        }
-    }
 
     // Check if we already opened this file.
     if (hashTableGet(path, (void **)&tmp, *state->fds) != -1)
@@ -129,13 +95,6 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
         }
     }
 
-    // Update our lockedFile
-    if (ONE_LOCK_POLICY && flags & O_LOCK)
-    {
-        printf("\n\nUUID:%s Opened file lockingly:%s\n\n\n", state->uuid, fd->name);
-        state->lockedFile = fd;
-    }
-
     // On a capacity miss, we have to return -1 and set errno to EOVERFLOW
     if (capMiss)
     {
@@ -151,22 +110,12 @@ int conn_openFile(char *path, int flags, FileContainer **fcs, int *fcsSize, Conn
  * @brief Closes File of name path.
  *
  * @param path the name of the File to close.
- * @param state inside which ConnState to close the file.
+ * @param state inside which ConnState to close the File.
  * @return int 0 on success, -1 and sets errno on failure.
  */
 int conn_closeFile(const char *path, ConnState *state)
 {
     FileDescriptor *fd;
-
-    // If we are closing our currently locked File, the FileSystem will unlock it for us.
-    if (ONE_LOCK_POLICY && state->lockedFile != NULL)
-    {
-        if (!strcmp(path, state->lockedFile->name))
-        {
-            printf("\n\nUUID:%s Closed locked file %s\n\n\n", state->uuid, state->lockedFile->name);
-            state->lockedFile = NULL;
-        }
-    }
 
     // Check if the File is open.
     if (hashTableRemove(path, (void **)&fd, *state->fds) == -1)
@@ -176,6 +125,45 @@ int conn_closeFile(const char *path, ConnState *state)
     }
 
     return closeFile(fd, state->fs);
+}
+/**
+ * @brief Locks File of name path.
+ *
+ * @param path the name of the File to lock.
+ * @param state inside which ConnState to lock the File.
+ * @return int 0 on success, -1 and sets errno on failure.
+ */
+int conn_lockFile(char *path, ConnState *state)
+{
+    FileDescriptor *fd;
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    fd->flags |= FI_LOCK;
+
+    return 0;
+}
+
+/**
+ * @brief Unlocks File of name path.
+ *
+ * @param path the name of the File to unlock.
+ * @param state inside which ConnState to unlock the File.
+ * @return int 0 on success, -1 and sets errno on failure.
+ */
+int conn_unlockFile(char *path, ConnState *state)
+{
+    FileDescriptor *fd;
+    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    fd->flags &= ~FI_LOCK;
+
+    return 0;
 }
 
 /**
@@ -342,72 +330,14 @@ int conn_removeFile(const char *path, ConnState *state)
         return -1;
     }
 
-    // If we are removing our lockedFile we need to update it accordingly.
-    if (ONE_LOCK_POLICY && state->lockedFile != NULL)
-    {
-        if (!strcmp(path, state->lockedFile->name))
-        {
-            printf("\n\nUUID:%s Removed locked file %s\n\n\n", state->uuid, state->lockedFile->name);
-            state->lockedFile = NULL;
-        }
-    }
-
     if (removeFile(fd, state->fs) != 0)
     {
+        hashTablePut((char *)path, (void *)fd, *state->fds);
         return -1;
     }
 
     fdDestroy(fd);
     free(fd);
 
-    return 0;
-}
-
-/**
- * @brief
- *
- * @param path
- * @param state
- * @return int
- */
-int conn_lockFile(const char *path, ConnState *state)
-{
-    FileDescriptor *fd;
-    HandlerRequest *request;
-
-    if (!ONE_LOCK_POLICY)
-    {
-        return 0;
-    }
-    if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    // Automatically unlock last locked file.
-    if (state->lockedFile != NULL)
-    {
-        printf("\n\nUUID:%s Automatically unlocking file %s in favour of %s\n\n\n", state->uuid, state->lockedFile->name, path);
-        unlockFile(state->lockedFile->name, state->fs);
-        UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
-        handlerRequestInit(R_UNLOCK_NOTIFY, state->lockedFile->name, state->uuid, NULL, request);
-        syncqueuePush((void *)request, state->fs->lockHandlerQueue);
-    }
-
-    state->lockedFile = fd;
-    return 0;
-}
-
-int conn_unlockFile(const char *path, ConnState *state)
-{
-    if (!ONE_LOCK_POLICY)
-    {
-        return 0;
-    }
-    if (!strcmp(state->lockedFile->name, path))
-    {
-        printf("\n\nUUID:%s Unlocked locked file %s\n\n\n", state->uuid, state->lockedFile->name);
-        state->lockedFile = NULL;
-    }
     return 0;
 }

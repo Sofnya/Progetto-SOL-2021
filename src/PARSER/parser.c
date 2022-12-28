@@ -76,6 +76,8 @@ Stats parse(const char *path)
     stats.threadsSpawned = 0;
     stats.threadsKilled = 0;
 
+    stats.handlerRequests = 0;
+
     // Now go through the log line by line.
     while (getline(&line, &len, logFile) != -1)
     {
@@ -289,6 +291,13 @@ Stats parse(const char *path)
                 stats.threadsKilled += tmp1;
             }
         }
+        else if (!strncmp(value, "[LOCKHANDLER", 12))
+        {
+            if (!strncmp(value, "[LOCKHANDLER: Request", 21))
+            {
+                stats.handlerRequests++;
+            }
+        }
         else
         {
             printf("Unsupported option %s at line %d, ignoring.\n", value, lineN);
@@ -315,6 +324,8 @@ void printStats(Stats stats)
     printf("Number of:\n");
     printf("Requests:%lld\tResponses:%lld\tOf which errors:%lld\n", stats.nRequests, stats.nResponse, stats.nErrors);
     printf("Connections:%lld\tMaximum Simultaneous Connections:%lld\n", stats.connN, stats.maxConn);
+
+    printf("LockHandler requests:%lld\n", stats.handlerRequests);
 
     printf("\nType of requests:\n");
     printf("Read:%lld Write:%lld Open:%lld Close:%lld Lock:%lld Unlock:%lld Remove:%lld\n", stats.readN, stats.writeN, stats.openN, stats.closeN, stats.lockN, stats.unlockN, stats.removeN);
