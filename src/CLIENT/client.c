@@ -359,7 +359,7 @@ int main(int argc, char *argv[])
                 hashTableRemove(tmp, &value, lockedFiles);
 
             } while ((tmp = strtok_r(NULL, ",", &saveptr)) != NULL);
-            puts(optarg);
+            // puts(optarg);
             break;
         }
         // Enable verbose print.

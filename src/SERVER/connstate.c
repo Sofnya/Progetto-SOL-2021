@@ -42,7 +42,7 @@ void connStateDestroy(ConnState *state)
 {
     FileDescriptor *fd;
 
-    printf("%s disconnecting. Closing %lld files\n", state->uuid, hashTableSize(*state->fds));
+    // printf("%s disconnecting. Closing %lld files\n", state->uuid, hashTableSize(*state->fds));
     while (hashTablePop(NULL, (void **)&fd, *(state->fds)) != -1)
     {
         closeFile(fd, state->fs);

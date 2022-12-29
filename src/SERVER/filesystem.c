@@ -133,6 +133,7 @@ void fsDestroy(FileSystem *fs)
 {
     Metadata *cur;
     File *curFile;
+    HandlerRequest *curRequest;
 
     logger("Destroying fileSystem", "STATUS");
 
@@ -153,6 +154,14 @@ void fsDestroy(FileSystem *fs)
     pthread_rwlock_destroy(fs->rwLock);
     atomicDestroy(fs->curN);
     atomicDestroy(fs->curSize);
+
+    syncqueueOpen(fs->lockHandlerQueue);
+    while (syncqueueLen(*fs->lockHandlerQueue) > 0)
+    {
+        curRequest = (HandlerRequest *)syncqueuePop(fs->lockHandlerQueue);
+        handlerRequestDestroy(curRequest);
+        free(curRequest);
+    }
     syncqueueDestroy(fs->lockHandlerQueue);
 
     free(fs->lockHandlerQueue);
@@ -603,6 +612,7 @@ int lockFile(char *name, char *uuid, FileSystem *fs)
 {
     File *file;
     int tmp;
+    int tmpErrno = 0;
 
     PTHREAD_CHECK(READLOCK);
 
@@ -613,9 +623,11 @@ int lockFile(char *name, char *uuid, FileSystem *fs)
         return -1;
     }
     tmp = fileLock(file, uuid);
-    UNLOCK;
+    tmpErrno = errno;
+    PTHREAD_CHECK(UNLOCK);
     atomicInc(1, fs->fsStats->lock);
 
+    errno = tmpErrno;
     return tmp;
 }
 
@@ -652,6 +664,7 @@ int unlockFile(char *name, FileSystem *fs)
 int isLockedFile(char *name, FileSystem *fs)
 {
     File *file;
+    int tmp;
 
     PTHREAD_CHECK(READLOCK);
     if (hashTableGet(name, (void **)&file, *fs->filesTable) == -1)
@@ -660,9 +673,11 @@ int isLockedFile(char *name, FileSystem *fs)
         errno = EBADF;
         return -1;
     }
+
+    tmp = fileIsLocked(file);
     PTHREAD_CHECK(UNLOCK);
 
-    return fileIsLocked(file);
+    return tmp;
 }
 
 /**
@@ -676,6 +691,7 @@ int isLockedFile(char *name, FileSystem *fs)
 int isLockedByFile(char *name, char *uuid, FileSystem *fs)
 {
     File *file;
+    int tmp;
 
     PTHREAD_CHECK(READLOCK);
     if (hashTableGet(name, (void **)&file, *fs->filesTable) == -1)
@@ -684,9 +700,10 @@ int isLockedByFile(char *name, char *uuid, FileSystem *fs)
         errno = EBADF;
         return -1;
     }
+    tmp = fileIsLockedBy(file, uuid);
     PTHREAD_CHECK(UNLOCK);
 
-    return fileIsLockedBy(file, uuid);
+    return tmp;
 }
 
 /**
@@ -710,7 +727,6 @@ int removeFile(FileDescriptor *fd, FileSystem *fs)
         errno = EINVAL;
         return -1;
     }
-
     PTHREAD_CHECK(LISTLOCK);
     CLEANUP_PTHREAD_CHECK(WRITELOCK, LISTUNLOCK);
 

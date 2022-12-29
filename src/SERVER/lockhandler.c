@@ -17,7 +17,10 @@
 void _requestRespond(HandlerRequest *request, int status, ThreadPool *tp)
 {
     request->args->request->status = status;
-    PRINT_ERROR_CHECK(threadpoolSubmit(&handleRequest, request->args, tp));
+    if (threadpoolSubmit(&handleRequest, request->args, tp) == -1)
+    {
+        free(request->args);
+    }
 }
 
 char *_printWaitingList(void *el)
@@ -116,7 +119,7 @@ void *lockHandler(void *args)
         // sprintf(log, ">Queue size:%ld >Waiting size:%lld", syncqueueLen(*queue), hashTableSize(waitingLocks));
         // logger(log, "LOCKHANDLER");
 
-        _printAllLocks(lockedFiles, waitingLocks);
+        //_printAllLocks(lockedFiles, waitingLocks);
         if (request == NULL)
         {
             continue;

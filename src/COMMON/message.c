@@ -146,7 +146,11 @@ int sendMessage(int fd, Message *m)
 int receiveMessage(int fd, Message *m)
 {
     size_t infoSize = 0;
-
+    m->content = NULL;
+    m->info = NULL;
+    m->size = 0;
+    m->status = 0;
+    m->type = 0;
 #ifdef DEBUG
     printf("REC:start:%d\n", fd);
 #endif

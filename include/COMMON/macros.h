@@ -65,6 +65,12 @@
         perror("Error on a pthread call");                                    \
         return NULL;                                                          \
     }
+#define SAFE_PTHREAD_CHECK(arg)                                               \
+    if ((errno = (arg)) != 0)                                                 \
+    {                                                                         \
+        fprintf(stderr, "Error on line:%d of file:%s\n", __LINE__, __FILE__); \
+        perror("Error on a pthread call");                                    \
+    }
 #define READ_CHECK(arg, expected)                                                 \
     {                                                                             \
         ssize_t tmp;                                                              \

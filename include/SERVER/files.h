@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <time.h>
+#include "COMMON/atomicint.h"
 
 typedef struct _metadata
 {

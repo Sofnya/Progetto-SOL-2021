@@ -38,6 +38,7 @@ struct _receiveArgs
     int fd;
     ConnState *state;
     fd_set *set;
+    pthread_mutex_t *mtx;
 };
 
 void receiveRequest(void *argsIn);
@@ -94,6 +95,7 @@ int main(int argc, char *argv[])
     pthread_t lockHandlerPid;
     struct _handlerArgs *hargs;
     volatile int lockHandlerTerminate = 0;
+    pthread_mutex_t *setMtx;
 
     action.sa_handler = &signalHandler;
     action.sa_flags = 0;
@@ -163,8 +165,11 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    UNSAFE_NULL_CHECK(setMtx = malloc(sizeof(pthread_mutex_t)));
+    SAFE_PTHREAD_CHECK(pthread_mutex_init(setMtx, NULL));
+
     // And now we start waiting for new requests, accepting them and passing them to the ThreadPool to handle.
-    acceptRequests();
+    acceptRequests(setMtx);
 
     // If we are here, we received a termination signal.
 
@@ -182,6 +187,9 @@ int main(int argc, char *argv[])
     // Then we terminate the threadpool.
     threadpoolCleanExit(&pool);
 
+    SAFE_PTHREAD_CHECK(pthread_mutex_destroy(setMtx));
+    free(setMtx);
+
     // Then the LockHandler.
     lockHandlerTerminate = 1;
     syncqueueClose(fs.lockHandlerQueue);
@@ -190,7 +198,7 @@ int main(int argc, char *argv[])
     exit(EXIT_SUCCESS);
 }
 
-void acceptRequests()
+void acceptRequests(pthread_mutex_t *setMtx)
 {
     int fd_sk = sfd, fd_c, fd_num = 0, fd, i = 0;
     int *curFD;
@@ -231,7 +239,9 @@ void acceptRequests()
 
     while (signalNumber == 0 || ((signalNumber == SIGHUP) && (listSize(connections) > 0)))
     {
+        SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         rdset = set;
+        SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
         tv = tvOriginal;
         if (pselect(fd_num + 1, &rdset, NULL, NULL, &tv, &old_sigmask) == -1)
@@ -258,7 +268,10 @@ void acceptRequests()
                         {
                             fd_num = fd_c;
                         }
+
+                        SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
                         FD_SET(fd_c, &set);
+                        SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
                         UNSAFE_NULL_CHECK(cur = malloc(sizeof(ConnState)));
 
                         // We use the fd as a key, as it's guaranteed to be unique as long as the connection is alive.
@@ -285,10 +298,15 @@ void acceptRequests()
                             UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
                             args->fd = fd;
                             args->state = cur;
-                            args->set = &set;
+                            args->mtx = setMtx;
+                            atomicInc(1, &cur->inUse);
 
+                            SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
+                            args->set = &set;
                             // Temporarily unset the fd, will be set again from within the threadpool request.
+
                             FD_CLR(fd, &set);
+                            SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
                             PRINT_ERROR_CHECK(threadpoolSubmit(receiveRequest, (void *)args, &pool));
                         }
@@ -308,8 +326,10 @@ void acceptRequests()
                                 free(cur);
                             }
 
+                            SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
                             FD_CLR(fd, &set);
                             PRINT_ERROR_CHECK(close(fd));
+                            SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
                             // Keep our list of connections updated.
                             saveptr = NULL;
@@ -370,6 +390,7 @@ void acceptRequests()
             free(cur);
         }
     }
+
     hashTableDestroy(&connStates);
 }
 
@@ -379,6 +400,7 @@ void receiveRequest(void *argsIn)
     int fd = receiveArgs.fd;
     ConnState *state = receiveArgs.state;
     fd_set *set = receiveArgs.set;
+    pthread_mutex_t *setMtx = receiveArgs.mtx;
 
     free(argsIn);
 
@@ -386,19 +408,30 @@ void receiveRequest(void *argsIn)
     HandlerRequest *handlerRequest;
 
     Message *request = malloc(sizeof(Message));
+    // If the connState is being destroyed, returns immediately, destroying it if we are the last to use it.
+    if (state->shouldDestroy == 1)
+    {
+        if (atomicDec(1, &state->inUse) == 0)
+        {
+            connStateDestroy(state);
+            free(state);
+        }
+        free(request);
+        return;
+    }
 
     // A new request is ready.
     if (receiveMessage(fd, request) != -1)
     {
+        SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         FD_SET(fd, set);
+        SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
         UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
         args->fd = fd;
         args->request = request;
         args->state = state;
         args->counter = atomicInc(1, &state->requestN) - 1;
-
-        atomicInc(1, &state->inUse);
 
         logRequest(request, *state);
         if ((request->type == MT_FOPEN) && ((*(int *)request->content) & O_LOCK) && !((*(int *)request->content) & O_CREATE))
@@ -426,7 +459,11 @@ void receiveRequest(void *argsIn)
     }
     else
     {
+        SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         FD_SET(fd, set);
+        SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
+
+        free(request);
     }
 }
 void handleRequest(void *args)
@@ -446,6 +483,7 @@ void handleRequest(void *args)
             connStateDestroy(state);
             free(state);
         }
+        free(args);
         return;
     }
 
@@ -900,12 +938,12 @@ void logResponse(Message *response, ConnState state)
     char *parsed;
     if (response->info == NULL)
     {
-        parsed = malloc(500);
+        parsed = malloc(1000);
         sprintf(parsed, ">MALFORMED >UUID:%s", state.uuid);
     }
     else
     {
-        parsed = malloc(500 + strlen(response->info));
+        parsed = malloc(1000 + strlen(response->info));
         sprintf(parsed, ">%s >Size:%ld >UUID:%s", response->info, response->size, state.uuid);
     }
     logger(parsed, "RESPONSE");
