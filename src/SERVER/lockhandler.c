@@ -89,6 +89,14 @@ void *lockHandler(void *args)
     List *waitingList;
     char log[500];
 
+    // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
+    sigset_t sigmask;
+    sigemptyset(&sigmask);
+    sigaddset(&sigmask, SIGINT);
+    sigaddset(&sigmask, SIGHUP);
+    sigaddset(&sigmask, SIGQUIT);
+    pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
+
     PRINT_ERROR_CHECK(hashTableInit(MAX_FILES, &waitingLocks));
 
     HandlerRequest *request;
@@ -103,14 +111,6 @@ void *lockHandler(void *args)
     {
         PRINT_ERROR_CHECK(hashTableInit(1024, &lockedFiles));
     }
-
-    // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
-    sigset_t sigmask;
-    sigemptyset(&sigmask);
-    sigaddset(&sigmask, SIGINT);
-    sigaddset(&sigmask, SIGHUP);
-    sigaddset(&sigmask, SIGQUIT);
-    pthread_sigmask(SIG_BLOCK, &sigmask, NULL);
 
     logger("Starting", "LOCKHANDLER");
     while (!(*terminate))
