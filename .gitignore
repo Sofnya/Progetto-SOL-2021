@@ -55,5 +55,3 @@ dkms.conf
 .vscode/
 
 out/
-
-src/TESTS/testFiles/

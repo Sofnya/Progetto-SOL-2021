@@ -17,7 +17,7 @@ server: $(common_objects) $(server_objects) parser
 	$(CC) $(CFLAGS) $(common_objects) $(server_objects) -o out/server.out $(LIBRARY)
 	cp src/SERVER/config.txt out/config.txt
 
-client: $(client_objects) $(common_objects)
+client: $(client_objects) $(common_objects) 
 	$(CC) $(CFLAGS) $(client_objects) $(common_objects) -o out/client.out $(LIBRARY)
 
 unitTest: $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) 
@@ -61,8 +61,16 @@ test3: server client
 
 	cd out/test3; ./test3.sh
 	
+obj:
+	mkdir -p obj &
+	mkdir -p obj/SERVER &
+	mkdir -p obj/COMMON &
+	mkdir -p obj/PARSER &
+	mkdir -p obj/TESTS &
+	mkdir -p obj/CLIENT &
 
-$(objects): $(obj_dir)%.o: src/%.c
+
+$(objects): $(obj_dir)%.o: src/%.c | obj
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
