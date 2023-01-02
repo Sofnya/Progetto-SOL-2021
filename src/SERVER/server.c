@@ -85,6 +85,8 @@ void cleanup(void)
     listDestroy(&connections);
 
     logger("Done cleaning up, goodbye!", "STATUS");
+
+    pthread_mutex_destroy((pthread_mutex_t *)&LOGLOCK);
 }
 
 int main(int argc, char *argv[])
@@ -112,6 +114,7 @@ int main(int argc, char *argv[])
     // Register our cleanup.
     atexit(&cleanup);
 
+    PTHREAD_CHECK(pthread_mutex_init((pthread_mutex_t *)&LOGLOCK, NULL));
     // We start by parsing our config file.
     if (argc == 2)
     {

@@ -422,6 +422,9 @@ void *_manage(void *args)
     // The manager also has to check for ThreadPool termination.
     while (!pool->_terminate)
     {
+        // sprintf(log, ">QueueSize:%ld", syncqueueLen(*pool->_queue));
+        // logger(log, "THREADPOOL");
+
         if (roundCount >= stability * 2)
         {
             balance = 0;
@@ -454,7 +457,7 @@ void *_manage(void *args)
         }
 
         // If the job queue is empty, we probably have too many threads, and we start killing one per round of management.
-        else if (pool->_queue->_len == 0 && curSize > pool->_coreSize)
+        else if (syncqueueLen(*pool->_queue) == 0 && curSize > pool->_coreSize)
         {
             balance++;
             if (balance > stability)
@@ -493,6 +496,13 @@ void *_manage(void *args)
 
     // Before finishing we try to kill any remaining threads.
     _threadpoolKILL(pool);
+
+    // Busy wait for all threads to die.
+    while (atomicGet(pool->alive) > 0)
+    {
+        // 10ms
+        usleep(10000);
+    }
 
     return 0;
 }

@@ -197,7 +197,7 @@ int fileAppend(const void *content, size_t size, File *file)
     {
         if (file->content != NULL)
         {
-            SAFE_ERROR_CHECK(fileDecompress(file));
+            CLEANUP_ERROR_CHECK(fileDecompress(file), pthread_spin_unlock(file->lock));
         }
         else
         {
@@ -234,6 +234,7 @@ int fileAppend(const void *content, size_t size, File *file)
 int fileRead(void *buf, size_t bufsize, File *file)
 {
     size_t n;
+    int tmp;
 
     PTHREAD_CHECK(pthread_spin_lock(file->lock));
 
@@ -242,9 +243,10 @@ int fileRead(void *buf, size_t bufsize, File *file)
     // If File is compressed, we directly decompress it inside of the buffer.
     if (file->isCompressed)
     {
+        tmp = uncompress(buf, &bufsize, file->content, file->compressedSize);
         PTHREAD_CHECK(pthread_spin_unlock(file->lock));
 
-        return uncompress(buf, &bufsize, file->content, file->compressedSize);
+        return tmp;
     }
 
     if (bufsize < file->size)
@@ -334,7 +336,7 @@ int fileLock(File *file, char *uuid)
         errno = EINVAL;
         return -1;
     }
-    SAFE_NULL_CHECK(file->lockedBy = malloc(strlen(uuid) + 1));
+    UNSAFE_NULL_CHECK(file->lockedBy = malloc(strlen(uuid) + 1));
     strcpy(file->lockedBy, uuid);
     PTHREAD_CHECK(pthread_spin_unlock(file->lock));
 

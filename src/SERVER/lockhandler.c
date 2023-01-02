@@ -298,28 +298,30 @@ void *lockHandler(void *args)
             logger(log, "LOCKHANDLER");
             if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
             {
-                PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
+                PRINT_ERROR_CHECK(listGet(0, (void **)&request_tmp, waitingList));
 
                 sprintf(log, "Waking lock >UUID:%s >File:%s", request_tmp->uuid, request_tmp->name);
                 logger(log, "LOCKHANDLER");
 
-                PRINT_ERROR_CHECK(lockFile(request_tmp->name, request_tmp->uuid, fs));
-
-                if (ONE_LOCK_POLICY)
+                if (lockFile(request_tmp->name, request_tmp->uuid, fs) == 0)
                 {
-                    UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request_tmp->name) + 1));
-                    strcpy(lockedFile, request_tmp->name);
-                    hashTablePut(request_tmp->uuid, lockedFile, lockedFiles);
-                }
+                    listRemove(0, NULL, waitingList);
+                    if (ONE_LOCK_POLICY)
+                    {
+                        UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request_tmp->name) + 1));
+                        strcpy(lockedFile, request_tmp->name);
+                        hashTablePut(request_tmp->uuid, lockedFile, lockedFiles);
+                    }
 
-                _requestRespond(request_tmp, MS_OK, tp);
-                handlerRequestDestroy(request_tmp);
-                free(request_tmp);
-                if (listSize(*waitingList) == 0)
-                {
-                    hashTableRemove(request->name, NULL, waitingLocks);
-                    listDestroy(waitingList);
-                    free(waitingList);
+                    _requestRespond(request_tmp, MS_OK, tp);
+                    handlerRequestDestroy(request_tmp);
+                    free(request_tmp);
+                    if (listSize(*waitingList) == 0)
+                    {
+                        hashTableRemove(request->name, NULL, waitingLocks);
+                        listDestroy(waitingList);
+                        free(waitingList);
+                    }
                 }
             }
             handlerRequestDestroy(request);

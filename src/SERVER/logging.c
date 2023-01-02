@@ -10,6 +10,7 @@
 #include "COMMON/macros.h"
 #include "COMMON/helpers.h"
 
+volatile pthread_mutex_t LOGLOCK;
 /**
  * @brief Logs a message, of given type. Type should be machine readable.
  *
@@ -26,21 +27,24 @@ int logger(char *msg, char *type)
 
     time(&tmpTime);
     tm = gmtime(&tmpTime);
-    SAFE_NULL_CHECK(file = fopen(LOG_FILE, "a"));
 
     SAFE_NULL_CHECK(parsed = malloc(strlen(msg) + strlen(type) + 500));
 
     // Where the magical formatting happens.
     sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%ld\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, getTID(), type, msg);
+
+    PTHREAD_CHECK(pthread_mutex_lock((pthread_mutex_t *)&LOGLOCK));
+    CLEANUP_CHECK(file = fopen(LOG_FILE, "a"), NULL, pthread_mutex_unlock((pthread_mutex_t *)&LOGLOCK));
+
     fwrite(parsed, strlen(parsed), 1, file);
-    fflush(file);
+    fclose(file);
+    PTHREAD_CHECK(pthread_mutex_unlock((pthread_mutex_t *)&LOGLOCK));
 
     // We can mirror the logging to stdout if needed.
     if (VERBOSE_PRINT)
     {
         printf("%s", parsed);
     }
-    fclose(file);
     free(parsed);
 
     return 0;
