@@ -14,8 +14,16 @@
 #include "COMMON/macros.h"
 #include "SERVER/logging.h"
 
+/**
+ * @brief pushes a request on the stack to be handled, once it's allowed by the LockHandler.
+ *
+ * @param request the request to handle.
+ * @param status the status of the request.
+ * @param tp the ThreadPool on which to push this.
+ */
 void _requestRespond(HandlerRequest *request, int status, ThreadPool *tp)
 {
+    // Since a request's status is unused, we use this to tell the handling thread wether it was succesfull or not.
     request->args->request->status = status;
     if (threadpoolSubmit(&handleRequest, request->args, tp) == -1)
     {
@@ -23,6 +31,9 @@ void _requestRespond(HandlerRequest *request, int status, ThreadPool *tp)
     }
 }
 
+/**
+ * @brief just some debug custom printing.
+ */
 char *_printWaitingList(void *el)
 {
     struct _entry a = *(struct _entry *)el;
@@ -42,10 +53,18 @@ char *_printWaitingList(void *el)
     while (listScan((void **)&cur, &saveptr, waitingList) != -1)
     {
         count += sprintf(res + count, "%s | ", cur->uuid);
+        errno = 0;
+    }
+    if (errno == EOF)
+    {
+        count += sprintf(res + count, "%s | ", cur->uuid);
     }
     return res;
 }
 
+/**
+ * @brief just some debug custom printing.
+ */
 char *_printLockedFiles(void *el)
 {
     struct _entry a = *(struct _entry *)el;
@@ -59,6 +78,10 @@ char *_printLockedFiles(void *el)
     sprintf(res, "%s : %s", a.key, (char *)a.value);
     return res;
 }
+
+/**
+ * @brief just some debug custom printing.
+ */
 void _printAllLocks(HashTable lockedFiles, HashTable waitingLocks)
 {
     if (ONE_LOCK_POLICY && (hashTableSize(lockedFiles) > 0))
@@ -75,6 +98,12 @@ void _printAllLocks(HashTable lockedFiles, HashTable waitingLocks)
     }
 }
 
+/**
+ * @brief the LockHandler main loop, keeps consuming it's messagequeue until termination.
+ *
+ * @param args some appropriate _handlerArgs.
+ * @return void* always NULL.
+ */
 void *lockHandler(void *args)
 {
     struct _handlerArgs *hargs = (struct _handlerArgs *)args;
@@ -89,6 +118,14 @@ void *lockHandler(void *args)
     List *waitingList;
     char log[500];
 
+    HandlerRequest *request;
+    HandlerRequest *request_tmp;
+
+    // For the implementation of ONE_LOCK_POLICY
+    // We keep an HashTable mapping an UUID to it's current lockedFile.
+    HashTable lockedFiles;
+    char *lockedFile;
+
     // All threads except the main root thread should ignore termination signals, and let the root thread handle termination.
     sigset_t sigmask;
     sigemptyset(&sigmask);
@@ -99,14 +136,6 @@ void *lockHandler(void *args)
 
     PRINT_ERROR_CHECK(hashTableInit(MAX_FILES, &waitingLocks));
 
-    HandlerRequest *request;
-    HandlerRequest *request_tmp;
-
-    // For the implementation of ONE_LOCK_POLICY
-    // We keep an HashTable mapping an UUID to it's current lockedFile.
-    HashTable lockedFiles;
-    char *lockedFile;
-
     if (ONE_LOCK_POLICY)
     {
         PRINT_ERROR_CHECK(hashTableInit(1024, &lockedFiles));
@@ -115,11 +144,10 @@ void *lockHandler(void *args)
     logger("Starting", "LOCKHANDLER");
     while (!(*terminate))
     {
+        // Here we wait for a new request to handle.
         request = (HandlerRequest *)syncqueuePop(queue);
-        // sprintf(log, ">Queue size:%ld >Waiting size:%lld", syncqueueLen(*queue), hashTableSize(waitingLocks));
-        // logger(log, "LOCKHANDLER");
 
-        //_printAllLocks(lockedFiles, waitingLocks);
+        // If we got an error we are being woken up for termination.
         if (request == NULL)
         {
             continue;
@@ -142,7 +170,7 @@ void *lockHandler(void *args)
 
                     PRINT_ERROR_CHECK(unlockFile(lockedFile, fs));
 
-                    // We notify ourselves for code reuse.
+                    // We notify ourselves of the unlock.
                     UNSAFE_NULL_CHECK(request_tmp = malloc(sizeof(HandlerRequest)));
                     handlerRequestInit(R_UNLOCK_NOTIFY, lockedFile, request->uuid, NULL, request_tmp);
                     syncqueuePush((void *)request_tmp, queue);
@@ -150,7 +178,10 @@ void *lockHandler(void *args)
                     free(lockedFile);
                 }
             }
+
+            // We check wether we can lock the file.
             errno = 0;
+            // If it exists and isn't locked
             if (isLockedFile(request->name, fs) == -1 && errno != EBADF)
             {
 
@@ -169,6 +200,7 @@ void *lockHandler(void *args)
                 handlerRequestDestroy(request);
                 free(request);
             }
+            // If the file doesn't exist we answer with an error.
             else if (errno == EBADF)
             {
 
@@ -179,6 +211,7 @@ void *lockHandler(void *args)
                 handlerRequestDestroy(request);
                 free(request);
             }
+            // Otherwise, the file exists and is locked, so the request is put in queue of waiting requests.
             else
             {
                 sprintf(log, "Request:LOCK >Queued >UUID:%s >File:%s", request->uuid, request->name);
@@ -207,12 +240,15 @@ void *lockHandler(void *args)
                     free(lockedFile);
                 }
             }
+
             if (isLockedByFile(request->name, request->uuid, fs) == 0)
             {
 
                 sprintf(log, "Request:UNLOCK >Success >UUID:%s >File:%s", request->uuid, request->name);
                 logger(log, "LOCKHANDLER");
                 PRINT_ERROR_CHECK(unlockFile(request->name, fs));
+
+                // If we had requests waiting for the thread to be unlocked, we wake one now.
                 if (hashTableGet(request->name, (void **)&waitingList, waitingLocks) == 0)
                 {
                     PRINT_ERROR_CHECK(listPop((void **)&request_tmp, waitingList));
@@ -220,7 +256,7 @@ void *lockHandler(void *args)
 
                     PRINT_ERROR_CHECK(lockFile(request_tmp->name, request_tmp->uuid, fs));
 
-                    // In case of a woken up lock, we have to update it's lockedFile.
+                    // In case of a woken up lock, we still have to update it's lockedFile.
                     if (ONE_LOCK_POLICY)
                     {
                         UNSAFE_NULL_CHECK(lockedFile = malloc(strlen(request_tmp->name) + 1));
@@ -231,6 +267,8 @@ void *lockHandler(void *args)
                     _requestRespond(request_tmp, MS_OK, tp);
                     handlerRequestDestroy(request_tmp);
                     free(request_tmp);
+
+                    // And destroy the waitingList if it's now empty
                     if (listSize(*waitingList) == 0)
                     {
                         hashTableRemove(request->name, NULL, waitingLocks);
@@ -265,6 +303,8 @@ void *lockHandler(void *args)
 
             sprintf(log, "Request:REMOVE >UUID:%s >File:%s", request->uuid, request->name);
             logger(log, "LOCKHANDLER");
+
+            // If we had any requests waiting to lock our file, we answer unsuccesfully to all of them, as the file no longer exists.
             if (hashTableRemove(request->name, (void **)&waitingList, waitingLocks) == 0)
             {
                 sprintf(log, "Waking %d waiting requests", listSize(*waitingList));
@@ -283,8 +323,10 @@ void *lockHandler(void *args)
             free(request);
             break;
         }
+        // Notify's are fictitious requests, generated internally to notify our LockHandler of a change, and shouldn't generate a response.
         case (R_UNLOCK_NOTIFY):
         {
+            // Like an R_UNLOCK, only doesn't respond.
 
             if (ONE_LOCK_POLICY)
             {
@@ -330,6 +372,8 @@ void *lockHandler(void *args)
         }
         case (R_LOCK_CREATE_NOTIFY):
         {
+            // Notifies us that a file has been created in a locked state, we need to know this for the ONE_LOCK_POLICY.
+
             sprintf(log, "Request:LOCK_CREATE_NOTIFY >UUID:%s >File:%s", request->uuid, request->name);
             logger(log, "LOCKHANDLER");
             if (ONE_LOCK_POLICY)
@@ -374,6 +418,7 @@ void *lockHandler(void *args)
         }
     }
 
+    // If we are out of the loop we should terminate.
     logger("Terminating", "LOCKHANDLER");
     while (hashTablePop(NULL, (void **)&waitingList, waitingLocks) != -1)
     {

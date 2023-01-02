@@ -221,6 +221,7 @@ void acceptRequests(pthread_mutex_t *setMtx)
 
     hashTableInit(1024, &connStates);
 
+    // We need to set a timeout for pselect to update our rdset, since client threads update the set on their own.
     tvOriginal.tv_sec = 0;
     tvOriginal.tv_nsec = 1e7;
 
@@ -240,8 +241,11 @@ void acceptRequests(pthread_mutex_t *setMtx)
 
     pthread_sigmask(SIG_SETMASK, &new_sigmask, &old_sigmask);
 
+    // While we either haven't recieved a termination signal, or our signal is a SIGHUP and we still have alive connections.
     while (signalNumber == 0 || ((signalNumber == SIGHUP) && (listSize(connections) > 0)))
     {
+        // The set is shared with worker threads, so we make a local copy and work on that.
+        // Since we set a timeout, we are guaranteed to have an updated copy at least every 1e7 nanosecs.
         SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         rdset = set;
         SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
@@ -260,6 +264,7 @@ void acceptRequests(pthread_mutex_t *setMtx)
                     // Accept new connections.
                     if (fd == fd_sk)
                     {
+                        // Don't accept new connections if we recieved a SIGHUP.
                         if (signalNumber == SIGHUP)
                         {
                             continue;
@@ -267,6 +272,7 @@ void acceptRequests(pthread_mutex_t *setMtx)
 
                         PRINT_ERROR_CHECK(fd_c = accept(fd_sk, NULL, 0));
 
+                        // Keep our fd_num updated
                         if (fd_c > fd_num)
                         {
                             fd_num = fd_c;
@@ -275,6 +281,8 @@ void acceptRequests(pthread_mutex_t *setMtx)
                         SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
                         FD_SET(fd_c, &set);
                         SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
+
+                        // Initialize a new ConnState, and put it in our HashTable.
                         UNSAFE_NULL_CHECK(cur = malloc(sizeof(ConnState)));
 
                         // We use the fd as a key, as it's guaranteed to be unique as long as the connection is alive.
@@ -283,6 +291,7 @@ void acceptRequests(pthread_mutex_t *setMtx)
 
                         PRINT_ERROR_CHECK(hashTablePut(curKey, (void *)cur, connStates));
 
+                        // And we keep track of our active connections.
                         UNSAFE_NULL_CHECK(curFD = malloc(sizeof(int)));
                         *curFD = fd_c;
                         PRINT_ERROR_CHECK(listPush((void *)curFD, &connections));
@@ -291,11 +300,11 @@ void acceptRequests(pthread_mutex_t *setMtx)
                     }
                     else
                     {
-                        // A new request is ready.
+                        // A new request is ready as if we can peek at least one byte then this isn't a disconnect.
                         if (recv(fd, (void *)&x, 1, MSG_DONTWAIT | MSG_PEEK) == 1)
                         {
+                            // Retrieve the appropriate connstate.
                             sprintf(curKey, "%d", fd);
-
                             PRINT_ERROR_CHECK(hashTableGet(curKey, (void **)&cur, connStates));
 
                             UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
@@ -306,11 +315,12 @@ void acceptRequests(pthread_mutex_t *setMtx)
 
                             SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
                             args->set = &set;
-                            // Temporarily unset the fd, will be set again from within the threadpool request.
-
+                            // Temporarily unset the fd, will be set again from within the ThreadPool.
+                            // This stops the pselect waking in a loop while we are still reading the request.
                             FD_CLR(fd, &set);
                             SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
+                            // The actual message reception is left for another thread, as reading a whole request may actually still be blocking.
                             PRINT_ERROR_CHECK(threadpoolSubmit(receiveRequest, (void *)args, &pool));
                         }
                         // Or a socket was closed, we handle the disconnection.
@@ -357,9 +367,9 @@ void acceptRequests(pthread_mutex_t *setMtx)
                                 }
                             }
 
+                            // And we need to keep track of our maximum fd.
                             PRINT_ERROR_CHECK(listSort(&connections, &_heuristic));
 
-                            // customPrintList(&connections, &a);
                             if (listSize(connections) == 0)
                             {
                                 fd_num = fd_sk;
@@ -383,7 +393,7 @@ void acceptRequests(pthread_mutex_t *setMtx)
         }
     }
 
-    // Gotta properly destroy our connstates at the end.
+    // Gotta destroy our ConnStates at the end.
     while (hashTablePop(NULL, (void **)&cur, connStates) != -1)
     {
         cur->shouldDestroy = 1;
@@ -397,6 +407,9 @@ void acceptRequests(pthread_mutex_t *setMtx)
     hashTableDestroy(&connStates);
 }
 
+/**
+ * @brief Reads an fd for an incoming request, and passes it to the appropriate handler.
+ */
 void receiveRequest(void *argsIn)
 {
     struct _receiveArgs receiveArgs = *(struct _receiveArgs *)argsIn;
@@ -423,13 +436,14 @@ void receiveRequest(void *argsIn)
         return;
     }
 
-    // A new request is ready.
     if (receiveMessage(fd, request) != -1)
     {
+        // As soon as we received the request, we put our fd back on the readset.
         SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         FD_SET(fd, set);
         SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
 
+        // Initialize the appropriate args for request handling.
         UNSAFE_NULL_CHECK(args = malloc(sizeof(struct _handleArgs)));
         args->fd = fd;
         args->request = request;
@@ -437,6 +451,8 @@ void receiveRequest(void *argsIn)
         args->counter = atomicInc(1, &state->requestN) - 1;
 
         logRequest(request, *state);
+
+        // We need to intercept some requests, and pass them to the LockHandler instead.
         if ((request->type == MT_FOPEN) && ((*(int *)request->content) & O_LOCK) && !((*(int *)request->content) & O_CREATE))
         {
             UNSAFE_NULL_CHECK(handlerRequest = malloc(sizeof(HandlerRequest)));
@@ -455,6 +471,7 @@ void receiveRequest(void *argsIn)
             handlerRequestInit(R_UNLOCK, request->info, state->uuid, args, handlerRequest);
             syncqueuePush((void *)handlerRequest, fs.lockHandlerQueue);
         }
+        // If the request doesn't need to pass through the LockHandler, we handle it straight away.
         else
         {
             handleRequest(args);
@@ -462,6 +479,7 @@ void receiveRequest(void *argsIn)
     }
     else
     {
+        // If something goes wrong we still reset our fd, and let the main thread handle it.
         SAFE_PTHREAD_CHECK(pthread_mutex_lock(setMtx));
         FD_SET(fd, set);
         SAFE_PTHREAD_CHECK(pthread_mutex_unlock(setMtx));
@@ -469,6 +487,10 @@ void receiveRequest(void *argsIn)
         free(request);
     }
 }
+
+/**
+ * @brief Actually handles a request, updating the FileSystem appropriately, and sending a response.
+ */
 void handleRequest(void *args)
 {
     struct _handleArgs handleArgs = *(struct _handleArgs *)args;
@@ -491,6 +513,7 @@ void handleRequest(void *args)
     }
 
     // If the request is out of order we push it back on the threadpool and execute something else.
+    // This shouldn't really happen with our current client.
     if (atomicComp(counter, &state->parsedN) != 0)
     {
         threadpoolSubmit(&handleRequest, args, &pool);
@@ -513,6 +536,7 @@ void handleRequest(void *args)
     free(request);
     free(response);
 
+    // At the end check if we need to destroy our ConnState again.
     if (atomicDec(1, &state->inUse) == 0)
     {
         if (state->shouldDestroy == 1)
@@ -525,7 +549,13 @@ void handleRequest(void *args)
     return;
 }
 
-// Here we parse a request, making all necessary calls to the FileSystem and generating an appropriate response with the results.
+/**
+ * @brief Here we parse a request, making all necessary calls to the FileSystem and generating an appropriate response with the results.
+ *
+ * @param request the request to parse.
+ * @param state the state of our connection.
+ * @return Message* an appropriate response.
+ */
 Message *parseRequest(Message *request, ConnState *state)
 {
     Message *response;
@@ -844,6 +874,9 @@ void logDisconnect(ConnState state)
     logger(parsed, "CONN_CLOSE");
 }
 
+/**
+ * @brief just some pretty logging for a request.
+ */
 void logRequest(Message *request, ConnState state)
 {
     char *parsed;
@@ -935,6 +968,9 @@ void logRequest(Message *request, ConnState state)
     free(parsed);
 }
 
+/**
+ * @brief just some pretty logging for a response.
+ */
 void logResponse(Message *response, ConnState state)
 {
     char *parsed;
@@ -959,6 +995,7 @@ long _heuristic(void *el)
     return -*cur;
 }
 
+// Needed for a customPrintList once, not anymore.
 char *a(void *el)
 {
     char *res = malloc(30);
