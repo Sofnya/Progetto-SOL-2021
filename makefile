@@ -13,18 +13,18 @@ objects =  $(client_objects) $(common_objects) $(server_objects) $(parser_object
 
 all: $(objects) server client
 
-server: $(common_objects) $(server_objects) parser
+server: $(common_objects) $(server_objects) parser | out
 	$(CC) $(CFLAGS) $(common_objects) $(server_objects) -o out/server.out $(LIBRARY)
 	cp src/SERVER/config.txt out/config.txt
 
-client: $(client_objects) $(common_objects) 
+client: $(client_objects) $(common_objects) | out
 	$(CC) $(CFLAGS) $(client_objects) $(common_objects) -o out/client.out $(LIBRARY)
 
-unitTest: $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) 
+unitTest: $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) | out
 	$(CC) $(CFLAGS) $(obj_dir)TESTS/unitTest.o $(obj_dir)SERVER/files.o $(obj_dir)SERVER/filesystem.o $(obj_dir)SERVER/policy.o $(obj_dir)SERVER/logging.o $(obj_dir)SERVER/globals.o $(obj_dir)SERVER/threadpool.o $(common_objects) -o out/unitTest.out $(LIBRARY)
 
 
-parser: $(parser_objects) $(common_objects)
+parser: $(parser_objects) $(common_objects) | out
 	$(CC) $(CFLAGS) $(parser_objects) $(common_objects) -o out/parser.out $(LIBRARY)
 	cp src/PARSER/statistiche.sh out/
 
@@ -69,6 +69,8 @@ obj:
 	mkdir -p obj/TESTS &
 	mkdir -p obj/CLIENT &
 
+out:
+	mkdir -p out &
 
 $(objects): $(obj_dir)%.o: src/%.c | obj
 	$(CC) -c $(CFLAGS) $< -o $@
