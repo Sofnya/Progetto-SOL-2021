@@ -31,7 +31,7 @@ int logger(char *msg, char *type)
     SAFE_NULL_CHECK(parsed = malloc(strlen(msg) + strlen(type) + 500));
 
     // Where the magical formatting happens.
-    sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%ld\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, getTID(), type, msg);
+    sprintf(parsed, "%02d/%02d/%04d %02d:%02d:%02d\tTID:%ld\t[%s: %s ]\n", tm->tm_mday, tm->tm_mon + 1, tm->tm_year + 1900, tm->tm_hour, tm->tm_min, tm->tm_sec, getTID(), type, msg);
 
     PTHREAD_CHECK(pthread_mutex_lock((pthread_mutex_t *)&LOGLOCK));
     CLEANUP_CHECK(file = fopen(LOG_FILE, "a"), NULL, pthread_mutex_unlock((pthread_mutex_t *)&LOGLOCK));

@@ -494,20 +494,19 @@ void handleRequest(void *args)
     if (atomicComp(counter, &state->parsedN) != 0)
     {
         threadpoolSubmit(&handleRequest, args, &pool);
-        puts("Request out of order");
+        printf("Req out of order: >UUID:%s >Info:%s >Type:%d >Status:%d\n", state->uuid, request->info, request->type, request->status);
         return;
     }
 
     free(args);
     // Parse it and generate an appropriate response. This is where we actually modify the FileSystem.
     response = parseRequest(request, state);
-    logResponse(response, *state);
-
-    // And send our response. No error handling as we need to terminate anyway.
-    sendMessage(fd, response);
-
     // Update our counter.
     atomicInc(1, &state->parsedN);
+
+    logResponse(response, *state);
+    // And send our response. No error handling as we need to terminate anyway.
+    sendMessage(fd, response);
 
     messageDestroy(request);
     messageDestroy(response);
