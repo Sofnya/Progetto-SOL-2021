@@ -8,6 +8,7 @@
 #include "COMMON/hashtable.h"
 #include "COMMON/macros.h"
 #include "COMMON/helpers.h"
+#include "SERVER/lockhandler.h"
 
 /**
  * @brief Initializes given ConnState with given FileSystem.
@@ -136,8 +137,17 @@ int conn_closeFile(const char *path, ConnState *state)
 int conn_lockFile(char *path, ConnState *state)
 {
     FileDescriptor *fd;
+    HandlerRequest *request;
+
     if (hashTableGet(path, (void **)&fd, *state->fds) == -1)
     {
+        // If the file wasn't open, we unlock it.
+        if (unlockFile(path, state->fs) == 0)
+        {
+            UNSAFE_NULL_CHECK(request = malloc(sizeof(HandlerRequest)));
+            handlerRequestInit(R_UNLOCK_NOTIFY, path, state->uuid, NULL, request);
+            syncqueuePush((void *)request, state->fs->lockHandlerQueue);
+        }
         errno = EINVAL;
         return -1;
     }
